@@ -6,7 +6,7 @@ COPY package.json pnpm-workspace.yaml ./
 COPY shared/package.json ./shared/
 COPY dashboard/package.json ./dashboard/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 COPY shared/ ./shared/
 COPY dashboard/ ./dashboard/

@@ -7,7 +7,7 @@ COPY shared/package.json ./shared/
 COPY db/package.json ./db/
 COPY pipelines/package.json ./pipelines/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 COPY shared/ ./shared/
 COPY db/ ./db/
