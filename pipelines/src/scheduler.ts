@@ -20,6 +20,9 @@ import { generateDailyBriefings } from "./briefing/briefing-generator.js";
 import { fetchOptionsFlow } from "./collectors/options-flow.js";
 import { fetchEarningsCalendar } from "./collectors/earnings-calendar.js";
 import { collectMacroEvents } from "./collectors/macro-events.js";
+import { collectGeopoliticalRisk } from "./collectors/geopolitical.js";
+import { runConfidenceCalibration } from "./engines/confidence-calibrator.js";
+import { fetchDarkPoolPrints } from "./collectors/dark-pool.js";
 
 async function runScoringAndIntelligence(): Promise<void> {
   await calculateMarketScores();
@@ -30,7 +33,7 @@ async function runScoringAndIntelligence(): Promise<void> {
 
 export const scheduler = {
   start() {
-    // Hourly: fetch fast-moving indicators + news + Reddit WSB
+    // Hourly: fetch fast-moving indicators + news + Reddit WSB + geopolitical risk
     cron.schedule("0 * * * *", async () => {
       console.log("[scheduler] Running hourly data collection");
       await Promise.allSettled([
@@ -40,6 +43,7 @@ export const scheduler = {
         fetchVIXTermStructure(),
         fetchNewsItems(),
         fetchRedditWSB(),
+        collectGeopoliticalRisk(),
       ]);
       await runScoringAndIntelligence();
     });
@@ -75,10 +79,16 @@ export const scheduler = {
       await Promise.allSettled([generateDailyBriefings(), fetchEarningsCalendar(), collectMacroEvents()]);
     });
 
-    // Daily at 8am UTC: evaluate signal outcomes from yesterday
+    // Daily at 8am UTC: evaluate signal outcomes + fetch dark pool prints from yesterday
     cron.schedule("0 8 * * *", async () => {
-      console.log("[scheduler] Evaluating signal outcomes");
-      await evaluateSignalOutcomes();
+      console.log("[scheduler] Evaluating signal outcomes + fetching dark pool data");
+      await Promise.allSettled([evaluateSignalOutcomes(), fetchDarkPoolPrints()]);
+    });
+
+    // Nightly at 11pm UTC: run confidence calibration
+    cron.schedule("0 23 * * *", async () => {
+      console.log("[scheduler] Running confidence calibration");
+      await runConfidenceCalibration();
     });
 
     console.log("[scheduler] Cron jobs registered");

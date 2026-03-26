@@ -10,11 +10,13 @@ import { News } from "./pages/News.js";
 import { Watchlist } from "./pages/Watchlist.js";
 import { Settings } from "./pages/Settings.js";
 import { Backtest } from "./pages/Backtest.js";
+import { DarkPool } from "./pages/DarkPool.js";
 import { ExpertiseLevelProvider, useExpertise, C } from "./context.js";
 import { ChatPanel } from "./components/ChatPanel.js";
+import { OnboardingTour } from "./components/OnboardingTour.js";
 function getHashRoute() {
     const hash = window.location.hash.replace(/^#/, "") || "/";
-    const valid = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/settings", "/backtest"];
+    const valid = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/backtest", "/dark-pool", "/settings"];
     return valid.includes(hash) ? hash : "/";
 }
 function useHashRoute() {
@@ -31,10 +33,13 @@ function useHashRoute() {
         function onKeyDown(e) {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
                 return;
-            const routes = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/settings", "/backtest"];
+            const routes = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/backtest", "/dark-pool", "/settings"];
             const idx = parseInt(e.key) - 1;
             if (idx >= 0 && idx < routes.length) {
                 navigate(routes[idx]);
+            }
+            if (e.key.toLowerCase() === "d") {
+                navigate("/dark-pool");
             }
         }
         window.addEventListener("keydown", onKeyDown);
@@ -56,6 +61,7 @@ const NAV_ITEMS = [
     { route: "/history", label: "History", icon: "📅", shortcut: "7" },
     { route: "/news", label: "News", icon: "📰", shortcut: "8" },
     { route: "/backtest", label: "Backtest", icon: "⏱️", shortcut: "9" },
+    { route: "/dark-pool", label: "Dark Pool", icon: "🌑", shortcut: "D" },
     { route: "/settings", label: "Settings", icon: "⚙️", shortcut: "0" },
 ];
 const MARKETS = [
@@ -222,6 +228,7 @@ function TopHeader({ route }) {
         "/history": "Historical Analysis",
         "/news": "News Feed",
         "/backtest": "Backtesting Engine",
+        "/dark-pool": "Dark Pool & Short Volume Monitor",
         "/settings": "Settings",
     };
     return (_jsxs("div", { style: {
@@ -259,6 +266,8 @@ function PageContent({ route }) {
             return _jsx(News, {});
         case "/backtest":
             return _jsx(Backtest, {});
+        case "/dark-pool":
+            return _jsx(DarkPool, {});
         case "/settings":
             return _jsx(Settings, {});
         default:
@@ -279,6 +288,6 @@ function AppInner() {
         }, children: [_jsx(Sidebar, { route: route, navigate: navigate }), _jsxs("div", { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }, children: [_jsx(TopHeader, { route: route }), _jsx("main", { style: { flex: 1, overflowY: "auto", overflowX: "hidden" }, children: _jsx(PageContent, { route: route }) })] })] }));
 }
 function App() {
-    return (_jsxs(ExpertiseLevelProvider, { children: [_jsx(AppInner, {}), _jsx(ChatPanel, {})] }));
+    return (_jsxs(ExpertiseLevelProvider, { children: [_jsx(AppInner, {}), _jsx(ChatPanel, {}), _jsx(OnboardingTour, {})] }));
 }
 export default App;

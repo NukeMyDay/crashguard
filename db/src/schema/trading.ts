@@ -11,6 +11,7 @@ import {
   pgEnum,
   index,
   date,
+  bigint,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -277,6 +278,11 @@ export const signalOutcomes = pgTable(
     exitPrice: decimal("exit_price", { precision: 20, scale: 6 }).notNull(),
     pnlPercent: decimal("pnl_percent", { precision: 10, scale: 4 }).notNull(),
     outcome: signalOutcomeEnum("outcome").notNull(),
+    targetAccuracy: decimal("target_accuracy", { precision: 5, scale: 4 }),
+    targetHit: boolean("target_hit"),
+    targetHitAt: timestamp("target_hit_at"),
+    maxFavorableExcursion: decimal("mfe", { precision: 8, scale: 4 }),
+    maxAdverseExcursion: decimal("mae", { precision: 8, scale: 4 }),
     evaluatedAt: timestamp("evaluated_at").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -363,6 +369,25 @@ export const apiKeys = pgTable("api_keys", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ─── strategy_calibrations ────────────────────────────────────────────────────
+
+export const strategyCalibrations = pgTable(
+  "strategy_calibrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    strategyName: varchar("strategy_name", { length: 100 }).notNull(),
+    actualWinRate: decimal("actual_win_rate", { precision: 5, scale: 4 }),
+    statedConfidenceAvg: decimal("stated_confidence_avg", { precision: 5, scale: 4 }),
+    calibrationFactor: decimal("calibration_factor", { precision: 5, scale: 4 }),
+    samplesN: integer("samples_n"),
+    calibratedAt: timestamp("calibrated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    strategyNameIdx: index("strategy_calibrations_strategy_name_idx").on(table.strategyName),
+    calibratedAtIdx: index("strategy_calibrations_calibrated_at_idx").on(table.calibratedAt),
+  })
+);
+
 // ─── trades ───────────────────────────────────────────────────────────────────
 
 export const trades = pgTable(
@@ -396,5 +421,26 @@ export const trades = pgTable(
     symbolIdx: index("trades_symbol_idx").on(table.symbol),
     entryAtIdx: index("trades_entry_at_idx").on(table.entryAt),
     statusIdx: index("trades_status_idx").on(table.status),
+  })
+);
+
+// ─── dark_pool_prints ─────────────────────────────────────────────────────────
+
+export const darkPoolPrints = pgTable(
+  "dark_pool_prints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticker: varchar("ticker", { length: 20 }).notNull(),
+    tradeDate: varchar("trade_date", { length: 10 }).notNull(),
+    shortVolume: bigint("short_volume", { mode: "number" }),
+    totalVolume: bigint("total_volume", { mode: "number" }),
+    shortRatio: decimal("short_ratio", { precision: 5, scale: 4 }),
+    isHeavyShort: boolean("is_heavy_short").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tickerIdx: index("dark_pool_prints_ticker_idx").on(table.ticker),
+    tradeDateIdx: index("dark_pool_prints_trade_date_idx").on(table.tradeDate),
+    shortRatioIdx: index("dark_pool_prints_short_ratio_idx").on(table.shortRatio),
   })
 );

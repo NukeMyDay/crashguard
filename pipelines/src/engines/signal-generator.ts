@@ -8,6 +8,7 @@
 import { db } from "@marketpulse/db/client";
 import { strategies, signals, indicators, indicatorValues, marketRegimes } from "@marketpulse/db/schema";
 import { eq, and, desc, gte, inArray } from "drizzle-orm";
+import { getCalibrationFactor, applyCalibration } from "./confidence-calibrator.js";
 
 type StrategyType = "momentum" | "mean_reversion" | "sector_rotation" | "risk_off" | "short" | "penny";
 
@@ -370,9 +371,12 @@ export async function generateSignals(): Promise<void> {
         continue;
     }
 
-    // Insert generated signals
+    // Insert generated signals (with calibration applied to confidence)
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const calibrationFactor = await getCalibrationFactor(strategy.name);
+
     for (const sig of generated) {
+      const calibratedConfidence = applyCalibration(sig.confidenceScore, calibrationFactor);
       await db.insert(signals).values({
         strategyId: strategy.id,
         symbol: sig.symbol,
@@ -381,13 +385,13 @@ export async function generateSignals(): Promise<void> {
         price: String(sig.price),
         stopLoss: String(sig.stopLoss),
         targetPrice: String(sig.targetPrice),
-        confidenceScore: String(sig.confidenceScore),
+        confidenceScore: String(calibratedConfidence),
         positionSizePct: String(sig.positionSizePct),
         riskFactors: sig.riskFactors,
         rationale: sig.rationale,
         expiresAt,
         status: "active",
-        metadata: sig.metadata,
+        metadata: { ...sig.metadata, calibrationFactor },
       });
       totalInserted++;
     }

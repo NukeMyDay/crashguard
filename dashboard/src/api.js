@@ -95,3 +95,18 @@ export function testWebhookUrl(url) {
         body: JSON.stringify({ url }),
     });
 }
+export function getDarkPool(date = "latest") {
+    return fetchJSON(`/dark-pool?date=${encodeURIComponent(date)}`);
+}
+export function getPortfolioAnalytics() {
+    return fetchJSON("/portfolio/analytics");
+}
+export function getSignalAccuracy() {
+    return fetchJSON("/signals/accuracy");
+}
+export function getMomentum(top = 30) {
+    return fetchJSON(`/momentum?top=${top}`);
+}
+export function getRebalanceAdvice() {
+    return fetchJSON("/portfolio/rebalance-advice");
+}

@@ -12,7 +12,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { getPortfolio, getPortfolioPerformance, executeTrade, getStressTest } from "../api.js";
+import { getPortfolio, getPortfolioPerformance, executeTrade, getStressTest, getRebalanceAdvice } from "../api.js";
 import {
   C,
   Card,
@@ -507,6 +507,155 @@ function TradeForm({ onTraded }: { onTraded: () => void }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Rebalancing Advisor
+// ---------------------------------------------------------------------------
+
+interface RebalanceAction {
+  ticker: string;
+  action: "increase" | "reduce" | "trim";
+  currentWeight: number;
+  suggestedWeight: number;
+  reason: string;
+}
+
+interface RebalanceData {
+  actions?: RebalanceAction[];
+  summary?: string;
+  estimatedSharpeImprovement?: number;
+}
+
+function actionIcon(action: string): string {
+  if (action === "increase") return "↑";
+  if (action === "reduce") return "↓";
+  return "✂";
+}
+
+function actionColor(action: string): string {
+  if (action === "increase") return "#22c55e";
+  if (action === "reduce") return "#ef4444";
+  return "#f59e0b";
+}
+
+function RebalancingAdvisor() {
+  const { beginnerMode } = useBeginnerMode();
+  const [data, setData] = useState<RebalanceData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [applied, setApplied] = useState<Set<string>>(new Set());
+
+  function load() {
+    setLoading(true);
+    getRebalanceAdvice()
+      .then((d: RebalanceData) => { setData(d); setError(null); })
+      .catch((e: unknown) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const actions: RebalanceAction[] = data?.actions ?? [];
+
+  function applyDraft(ticker: string) {
+    // Paper-trading only: save draft adjustment to localStorage
+    const key = `rebalance_draft_${ticker}`;
+    const existing = actions.find((a) => a.ticker === ticker);
+    if (existing) {
+      localStorage.setItem(key, JSON.stringify({ ticker, suggestedWeight: existing.suggestedWeight, appliedAt: new Date().toISOString() }));
+      setApplied((prev) => new Set([...prev, ticker]));
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <SectionTitle>Rebalancing Advice</SectionTitle>
+        <button
+          onClick={load}
+          style={{ padding: "5px 14px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.textMuted, fontSize: 12, cursor: "pointer" }}
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {beginnerMode && (
+        <div style={{ padding: "10px 14px", background: `${C.blue}0d`, border: `1px solid ${C.blue}22`, borderRadius: 8, fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>
+          📚 Based on current market conditions, here is how to adjust your portfolio.
+        </div>
+      )}
+
+      {loading && <SkeletonBlock height={120} />}
+      {!loading && error && <ErrorBanner message={`Failed to load rebalancing advice: ${error}`} onRetry={load} />}
+
+      {!loading && !error && actions.length === 0 && (
+        <Card style={{ padding: "20px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 24, marginBottom: 8 }}>✅</div>
+          <div style={{ color: C.textSecondary, fontSize: 13 }}>Your portfolio looks well-positioned for the current regime.</div>
+        </Card>
+      )}
+
+      {!loading && !error && actions.length > 0 && (
+        <>
+          {data?.summary && (
+            <div style={{ padding: "10px 14px", background: `${C.border}55`, borderRadius: 8, fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>
+              {data.summary}
+              {data.estimatedSharpeImprovement != null && (
+                <span style={{ color: C.green, fontWeight: 700, marginLeft: 8 }}>
+                  +{data.estimatedSharpeImprovement.toFixed(2)} Sharpe
+                </span>
+              )}
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {actions.map((a) => {
+              const color = actionColor(a.action);
+              const isApplied = applied.has(a.ticker);
+              return (
+                <Card key={a.ticker} style={{ padding: "14px 18px", borderLeft: `3px solid ${color}` }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 20, color, lineHeight: 1 }}>{actionIcon(a.action)}</span>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ color: C.textPrimary, fontWeight: 700, fontSize: 15 }}>{a.ticker}</span>
+                          <span style={{ color, background: `${color}1a`, border: `1px solid ${color}44`, padding: "1px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, textTransform: "capitalize" }}>
+                            {a.action}
+                          </span>
+                        </div>
+                        <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>
+                          {a.currentWeight.toFixed(1)}% → <span style={{ color: C.textSecondary, fontWeight: 600 }}>{a.suggestedWeight.toFixed(1)}%</span>
+                          <span style={{ marginLeft: 8, color: C.textMuted }}>{a.reason}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => applyDraft(a.ticker)}
+                      disabled={isApplied}
+                      style={{
+                        padding: "5px 14px",
+                        borderRadius: 7,
+                        border: `1px solid ${isApplied ? C.border : color + "66"}`,
+                        background: isApplied ? "transparent" : `${color}18`,
+                        color: isApplied ? C.textMuted : color,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: isApplied ? "default" : "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {isApplied ? "✓ Applied (draft)" : "Apply"}
+                    </button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function Portfolio() {
   const { beginnerMode } = useBeginnerMode();
   const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
@@ -627,6 +776,9 @@ export function Portfolio() {
               Your P&L shows how your picks would have performed if you had used real money.
             </div>
           )}
+
+          {/* Rebalancing Advisor */}
+          <RebalancingAdvisor />
 
           {/* Holdings */}
           <div style={{ marginBottom: 28 }}>

@@ -1,7 +1,7 @@
-import { pgTable, uuid, varchar, text, decimal, boolean, timestamp, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, decimal, boolean, timestamp, pgEnum, index, bigint } from "drizzle-orm/pg-core";
 
 export const indicatorCategoryEnum = pgEnum("indicator_category", ["market", "sentiment", "macro", "volatility", "credit"]);
-export const indicatorSourceEnum = pgEnum("indicator_source", ["fred", "yahoo", "alpha_vantage", "cnn", "ecb"]);
+export const indicatorSourceEnum = pgEnum("indicator_source", ["fred", "yahoo", "alpha_vantage", "cnn", "ecb", "rss"]);
 export const indicatorFrequencyEnum = pgEnum("indicator_frequency", ["hourly", "daily", "weekly", "monthly"]);
 
 export const indicators = pgTable("indicators", {
@@ -19,6 +19,28 @@ export const indicators = pgTable("indicators", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// ─── sector_performance ───────────────────────────────────────────────────────
+
+export const sectorPerformance = pgTable(
+  "sector_performance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticker: varchar("ticker", { length: 10 }).notNull(),
+    sectorName: varchar("sector_name", { length: 50 }).notNull(),
+    price: decimal("price", { precision: 10, scale: 2 }),
+    changeDay: decimal("change_day", { precision: 8, scale: 4 }),
+    changeWeek: decimal("change_week", { precision: 8, scale: 4 }),
+    relativeVsSpy: decimal("relative_vs_spy", { precision: 8, scale: 4 }),
+    volume: bigint("volume", { mode: "number" }),
+    avgVolume20d: bigint("avg_volume_20d", { mode: "number" }),
+    fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tickerIdx: index("sector_performance_ticker_idx").on(table.ticker),
+    fetchedAtIdx: index("sector_performance_fetched_at_idx").on(table.fetchedAt),
+  })
+);
 
 export const indicatorValues = pgTable("indicator_values", {
   id: uuid("id").primaryKey().defaultRandom(),

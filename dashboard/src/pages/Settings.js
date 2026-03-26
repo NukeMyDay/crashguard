@@ -2,6 +2,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect } from "react";
 import { C, useExpertise } from "../context.js";
 import { fetchJSON, getWebhooks, addWebhook, deleteWebhook, testWebhookUrl } from "../api.js";
+import { resetTour } from "../components/OnboardingTour.js";
 function WebhookSection() {
     const [webhooks, setWebhooks] = useState([]);
     const [loadingHooks, setLoadingHooks] = useState(true);
@@ -373,7 +374,31 @@ export function Settings() {
                                     padding: "1px 5px",
                                     borderRadius: 4,
                                     fontFamily: "monospace",
-                                }, children: "ENCRYPTION_SECRET" }), " ", "on the server. Set this env var in production for maximum security."] })] }), _jsx(WebhookSection, {})] }));
+                                }, children: "ENCRYPTION_SECRET" }), " ", "on the server. Set this env var in production for maximum security."] })] }), _jsx(WebhookSection, {}), _jsxs("div", { style: {
+                    marginTop: 16,
+                    background: C.card,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 12,
+                    padding: 24,
+                }, children: [
+                    _jsx("div", { style: { color: C.textPrimary, fontWeight: 600, fontSize: 15, marginBottom: 4 }, children: "Onboarding Tour" }),
+                    _jsx("div", { style: { color: C.textMuted, fontSize: 12, marginBottom: 16 }, children: "Re-run the guided tour to learn about each dashboard feature." }),
+                    _jsx("button", {
+                        onClick: () => { resetTour(); window.location.hash = "/"; window.location.reload(); },
+                        style: {
+                            padding: "9px 18px",
+                            borderRadius: 8,
+                            border: `1px solid ${C.blue}55`,
+                            background: `${C.blue}11`,
+                            color: C.blue,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                        },
+                        children: "🗺️ Take the Tour",
+                    }),
+                ] })] }));
 }
 // ─── Status badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ loading, configured, }) {

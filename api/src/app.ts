@@ -21,6 +21,9 @@ import { macroEventsRouter } from "./routes/macro-events.js";
 import { correlationRouter } from "./routes/correlation.js";
 import { watchlistRouter } from "./routes/watchlist.js";
 import { publicRouter, apiKeysRouter } from "./routes/public.js";
+import { sectorsRouter } from "./routes/sectors.js";
+import { darkPoolRouter } from "./routes/dark-pool.js";
+import { momentumRouter } from "./routes/momentum.js";
 
 export const app = new Hono();
 
@@ -51,5 +54,8 @@ app.route("/v1/indicators/correlation", correlationRouter);
 app.route("/v1/watchlist", watchlistRouter);
 app.route("/v1/public", publicRouter);
 app.route("/v1/api-keys", apiKeysRouter);
+app.route("/v1/sectors", sectorsRouter);
+app.route("/v1/dark-pool", darkPoolRouter);
+app.route("/v1/momentum", momentumRouter);
 
 export default app;

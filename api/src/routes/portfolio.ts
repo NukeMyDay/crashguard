@@ -9,8 +9,9 @@
  */
 import { Hono } from "hono";
 import { db } from "@marketpulse/db/client";
-import { portfolios, trades, signals } from "@marketpulse/db/schema";
+import { portfolios, trades, signals, marketRegimes, marketScores } from "@marketpulse/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { computeMomentumRankings } from "./momentum.js";
 
 // ─── Stress Test Config ────────────────────────────────────────────────────────
 
@@ -375,6 +376,91 @@ portfolioRouter.get("/performance", async (c) => {
   return c.json(chartData);
 });
 
+// ─── GET /v1/portfolio/metrics ────────────────────────────────────────────────
+// Sharpe ratio, win rate, drawdown, and trade stats from closed paper trades
+
+portfolioRouter.get("/metrics", async (c) => {
+  const portfolio = await getOrCreateDefaultPortfolio();
+
+  const closedTrades = await db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.portfolioId, portfolio.id), eq(trades.status, "closed")))
+    .orderBy(trades.exitAt);
+
+  if (closedTrades.length === 0) {
+    return c.json({
+      sharpe30d: null, sharpe90d: null, totalTrades: 0,
+      winRate: null, avgReturnPct: null, maxDrawdownPct: null,
+      bestTrade: null, worstTrade: null,
+    });
+  }
+
+  const RISK_FREE_DAILY = 0.045 / 252;
+
+  function sharpe(returns: number[]): number {
+    if (returns.length < 2) return 0;
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+    const std = Math.sqrt(variance);
+    return std === 0 ? 0 : ((mean - RISK_FREE_DAILY) / std) * Math.sqrt(252);
+  }
+
+  const now = Date.now();
+  const ms30d = 30 * 24 * 60 * 60 * 1000;
+  const ms90d = 90 * 24 * 60 * 60 * 1000;
+
+  const returns30d: number[] = [];
+  const returns90d: number[] = [];
+  let wins = 0;
+  let cumulativePnl = 0;
+  let peakPnl = 0;
+  let maxDrawdown = 0;
+
+  let bestTrade: { ticker: string; returnPct: number } | null = null;
+  let worstTrade: { ticker: string; returnPct: number } | null = null;
+
+  for (const t of closedTrades) {
+    const pnlPct = Number(t.pnlPercent ?? 0);
+    const returnDecimal = pnlPct / 100;
+    const exitTime = (t.exitAt ?? t.entryAt).getTime();
+
+    if (now - exitTime <= ms30d) returns30d.push(returnDecimal);
+    if (now - exitTime <= ms90d) returns90d.push(returnDecimal);
+
+    if (pnlPct > 0) wins++;
+
+    cumulativePnl += Number(t.pnl ?? 0);
+    if (cumulativePnl > peakPnl) peakPnl = cumulativePnl;
+    const drawdown = peakPnl > 0 ? ((peakPnl - cumulativePnl) / peakPnl) * 100 : 0;
+    if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+
+    if (!bestTrade || pnlPct > bestTrade.returnPct) {
+      bestTrade = { ticker: t.symbol, returnPct: Math.round(pnlPct * 100) / 100 };
+    }
+    if (!worstTrade || pnlPct < worstTrade.returnPct) {
+      worstTrade = { ticker: t.symbol, returnPct: Math.round(pnlPct * 100) / 100 };
+    }
+  }
+
+  const totalTrades = closedTrades.length;
+  const allReturns = closedTrades.map((t) => Number(t.pnlPercent ?? 0) / 100);
+  const avgReturnPct = allReturns.length > 0
+    ? Math.round((allReturns.reduce((a, b) => a + b, 0) / allReturns.length) * 10000) / 100
+    : null;
+
+  return c.json({
+    sharpe30d: returns30d.length >= 2 ? Math.round(sharpe(returns30d) * 100) / 100 : null,
+    sharpe90d: returns90d.length >= 2 ? Math.round(sharpe(returns90d) * 100) / 100 : null,
+    totalTrades,
+    winRate: Math.round((wins / totalTrades) * 10000) / 10000,
+    avgReturnPct,
+    maxDrawdownPct: Math.round(-maxDrawdown * 100) / 100,
+    bestTrade,
+    worstTrade,
+  });
+});
+
 // ─── POST /v1/portfolio/stress-test ───────────────────────────────────────────
 
 portfolioRouter.post("/stress-test", async (c) => {
@@ -478,5 +564,129 @@ portfolioRouter.post("/stress-test", async (c) => {
     positions,
     worstPosition,
     bestHedge,
+  });
+});
+
+// ─── GET /v1/portfolio/rebalance-advice ────────────────────────────────────────
+// Generates portfolio rebalancing advice based on momentum, regime, and crash score.
+
+portfolioRouter.get("/rebalance-advice", async (c) => {
+  const portfolio = await getOrCreateDefaultPortfolio();
+
+  // 1. Current open positions grouped by symbol
+  const openTrades = await db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.portfolioId, portfolio.id), eq(trades.status, "open")));
+
+  const grouped = new Map<string, { direction: string; totalQty: number; totalCost: number }>();
+  for (const t of openTrades) {
+    const key = t.symbol;
+    const qty = Number(t.quantity);
+    const price = Number(t.entryPrice);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.totalQty += qty;
+      existing.totalCost += qty * price;
+    } else {
+      grouped.set(key, { direction: t.direction, totalQty: qty, totalCost: qty * price });
+    }
+  }
+
+  if (grouped.size === 0) {
+    return c.json({ advice: [], regime: null, crashScore: null, generatedAt: new Date().toISOString() });
+  }
+
+  // Build positions with live prices
+  const positions: Array<{ ticker: string; value: number; weight: number }> = [];
+  let totalValue = 0;
+
+  for (const [symbol, pos] of grouped.entries()) {
+    const currentPrice = (await fetchCurrentPrice(symbol)) ?? (pos.totalCost / pos.totalQty);
+    const value = currentPrice * pos.totalQty;
+    totalValue += value;
+    positions.push({ ticker: symbol, value, weight: 0 });
+  }
+
+  for (const pos of positions) {
+    pos.weight = totalValue > 0 ? pos.value / totalValue : 0;
+  }
+
+  // 2. Current regime (US market)
+  const regimeRows = await db
+    .select()
+    .from(marketRegimes)
+    .where(eq(marketRegimes.market, "us"))
+    .orderBy(desc(marketRegimes.detectedAt))
+    .limit(1);
+  const regime = (regimeRows[0]?.regime as string | undefined) ?? null;
+
+  // 3. Crash score (global)
+  const scoreRows = await db
+    .select()
+    .from(marketScores)
+    .where(eq(marketScores.market, "global"))
+    .orderBy(desc(marketScores.calculatedAt))
+    .limit(1);
+  const crashScore = scoreRows[0] ? Number(scoreRows[0].crashScore) : null;
+
+  // 4. Momentum rankings (cached)
+  const momentumRankings = await computeMomentumRankings();
+
+  // 5. Generate advice
+  const advice: Array<{
+    ticker: string;
+    action: string;
+    currentWeightPct: number;
+    suggestedWeightPct: number;
+    reason: string;
+  }> = [];
+
+  for (const pos of positions) {
+    const momentum = momentumRankings.find((m) => m.ticker === pos.ticker);
+    const weightPct = pos.weight * 100;
+
+    // Overweight high momentum in bull regime
+    if (regime === "bull" && momentum?.signal === "strong_buy" && weightPct < 15) {
+      advice.push({
+        ticker: pos.ticker,
+        action: "increase",
+        currentWeightPct: Math.round(weightPct * 100) / 100,
+        suggestedWeightPct: 15,
+        reason: "Strong momentum + bull regime",
+      });
+      continue;
+    }
+
+    // Reduce weak momentum in bear regime
+    if (regime === "bear" && momentum?.signal === "avoid" && weightPct > 5) {
+      advice.push({
+        ticker: pos.ticker,
+        action: "reduce",
+        currentWeightPct: Math.round(weightPct * 100) / 100,
+        suggestedWeightPct: 5,
+        reason: "Weak momentum + bear regime",
+      });
+      continue;
+    }
+
+    // Trim to raise cash when crash risk is high
+    if (crashScore != null && crashScore > 70 && pos.ticker !== "SHV" && weightPct > 10) {
+      const suggestedWeightPct = Math.round(weightPct * 0.7 * 100) / 100;
+      advice.push({
+        ticker: pos.ticker,
+        action: "trim",
+        currentWeightPct: Math.round(weightPct * 100) / 100,
+        suggestedWeightPct,
+        reason: `High crash risk (${crashScore.toFixed(0)}) — raise cash buffer`,
+      });
+    }
+  }
+
+  return c.json({
+    advice,
+    regime,
+    crashScore,
+    generatedAt: new Date().toISOString(),
   });
 });

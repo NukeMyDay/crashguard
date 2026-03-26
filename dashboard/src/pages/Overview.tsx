@@ -7,6 +7,7 @@ import { ScoreHistoryChart } from "../components/ScoreHistoryChart.js";
 import { IndicatorTable } from "../components/IndicatorTable.js";
 import { AttributionPanel } from "../components/AttributionPanel.js";
 import { CorrelationHeatmap } from "../components/CorrelationHeatmap.js";
+import { ReportExport } from "../components/ReportExport.js";
 import {
   C,
   Card,
@@ -521,16 +522,27 @@ export function Overview() {
   return (
     <div style={{ padding: 28, maxWidth: 1400 }}>
       {/* Page header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }}>Overview</h1>
-        <p style={{ color: C.textMuted, marginTop: 5, fontSize: 13 }}>
-          Real-time crash probability dashboard
-          {lastUpdated && (
-            <span style={{ marginLeft: 12, color: "#2a3a50" }}>
-              Last updated {secondsAgo < 5 ? "just now" : `${secondsAgo}s ago`}
-            </span>
-          )}
-        </p>
+      <div style={{ marginBottom: 28, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }}>Overview</h1>
+          <p style={{ color: C.textMuted, marginTop: 5, fontSize: 13 }}>
+            Real-time crash probability dashboard
+            {lastUpdated && (
+              <span style={{ marginLeft: 12, color: "#2a3a50" }}>
+                Last updated {secondsAgo < 5 ? "just now" : `${secondsAgo}s ago`}
+              </span>
+            )}
+          </p>
+        </div>
+        <ReportExport
+          data={{
+            globalScore: globalScore ? Number(globalScore.crashScore) : undefined,
+            regime: typeof regime?.regime === "string" ? regime.regime : undefined,
+            scores: dashboard?.scores ?? [],
+            indicators: indicators ?? [],
+            signals: latestSignals ?? [],
+          }}
+        />
       </div>
 
       {dashError && <ErrorBanner message={`Dashboard data unavailable: ${dashError}`} onRetry={load} />}

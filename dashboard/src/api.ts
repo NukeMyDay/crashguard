@@ -120,3 +120,15 @@ export function testWebhookUrl(url: string) {
     body: JSON.stringify({ url }),
   });
 }
+
+export function getSignalAccuracy() {
+  return fetchJSON<any>("/signals/accuracy");
+}
+
+export function getMomentum(top = 30) {
+  return fetchJSON<any>(`/momentum?top=${top}`);
+}
+
+export function getRebalanceAdvice() {
+  return fetchJSON<any>("/portfolio/rebalance-advice");
+}

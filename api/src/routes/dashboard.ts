@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@marketpulse/db/client";
-import { marketScores, alerts, indicators, indicatorValues } from "@marketpulse/db/schema";
+import { marketScores, alerts, indicators, indicatorValues, marketRegimes, strategies } from "@marketpulse/db/schema";
 import { desc, gte, eq, and } from "drizzle-orm";
 import type { Market } from "@marketpulse/shared";
 import { MARKETS } from "@marketpulse/shared";
@@ -31,9 +31,28 @@ dashboardRouter.get("/", async (c) => {
     .orderBy(desc(alerts.triggeredAt))
     .limit(20);
 
+  // Get current regime and active strategies
+  const latestRegime = await db
+    .select({ regime: marketRegimes.regime })
+    .from(marketRegimes)
+    .where(eq(marketRegimes.market, "global"))
+    .orderBy(desc(marketRegimes.detectedAt))
+    .limit(1)
+    .then((rows) => rows[0]?.regime ?? null);
+
+  const activeStrategies = latestRegime
+    ? await db
+        .select({ name: strategies.name })
+        .from(strategies)
+        .where(eq(strategies.isActive, true))
+        .then((rows) => rows.map((r) => r.name))
+    : [];
+
   return c.json({
     scores: latestScores,
     alerts: recentAlerts,
+    currentRegime: latestRegime,
+    activeStrategies,
     lastUpdated: new Date().toISOString(),
   });
 });

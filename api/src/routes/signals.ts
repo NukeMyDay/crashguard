@@ -66,6 +66,70 @@ signalsRouter.get("/:id", async (c) => {
   return c.json(rows[0]);
 });
 
+// GET /v1/signals/accuracy — aggregate price-target accuracy stats
+signalsRouter.get("/accuracy", async (c) => {
+  // Fetch all outcomes joined with strategy info via signal
+  const rows = await db
+    .select({
+      outcome: signalOutcomes.outcome,
+      targetHit: signalOutcomes.targetHit,
+      targetAccuracy: signalOutcomes.targetAccuracy,
+      mfe: signalOutcomes.maxFavorableExcursion,
+      mae: signalOutcomes.maxAdverseExcursion,
+      strategyType: strategies.type,
+      strategySlug: strategies.slug,
+    })
+    .from(signalOutcomes)
+    .innerJoin(signals, eq(signalOutcomes.signalId, signals.id))
+    .innerJoin(strategies, eq(signals.strategyId, strategies.id));
+
+  if (rows.length === 0) {
+    return c.json({ overall: { targetHitRate: null, avgTargetAccuracy: null, avgMFE: null, avgMAE: null, n: 0 }, byStrategy: [] });
+  }
+
+  function aggregateRows(subset: typeof rows) {
+    const n = subset.length;
+    const withTarget = subset.filter((r) => r.targetHit !== null);
+    const targetHits = withTarget.filter((r) => r.targetHit === true).length;
+    const targetHitRate = withTarget.length > 0 ? Math.round((targetHits / withTarget.length) * 10000) / 10000 : null;
+
+    const accuracyVals = subset.map((r) => Number(r.targetAccuracy)).filter((v) => !isNaN(v) && v != null);
+    const avgTargetAccuracy = accuracyVals.length > 0
+      ? Math.round((accuracyVals.reduce((a, b) => a + b, 0) / accuracyVals.length) * 10000) / 10000
+      : null;
+
+    const mfeVals = subset.map((r) => Number(r.mfe)).filter((v) => !isNaN(v));
+    const avgMFE = mfeVals.length > 0
+      ? Math.round((mfeVals.reduce((a, b) => a + b, 0) / mfeVals.length) * 100) / 100
+      : null;
+
+    const maeVals = subset.map((r) => Number(r.mae)).filter((v) => !isNaN(v));
+    const avgMAE = maeVals.length > 0
+      ? Math.round((maeVals.reduce((a, b) => a + b, 0) / maeVals.length) * 100) / 100
+      : null;
+
+    return { targetHitRate, avgTargetAccuracy, avgMFE, avgMAE, n };
+  }
+
+  const overall = aggregateRows(rows);
+
+  // Group by strategy slug
+  const strategyMap = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const key = row.strategySlug;
+    if (!strategyMap.has(key)) strategyMap.set(key, []);
+    strategyMap.get(key)!.push(row);
+  }
+
+  const byStrategy = Array.from(strategyMap.entries()).map(([strategy, subset]) => ({
+    strategy,
+    type: subset[0].strategyType,
+    ...aggregateRows(subset),
+  }));
+
+  return c.json({ overall, byStrategy });
+});
+
 // GET /v1/signals/:id/outcome — signal outcome (win/loss/neutral)
 signalsRouter.get("/:id/outcome", async (c) => {
   const id = c.req.param("id");

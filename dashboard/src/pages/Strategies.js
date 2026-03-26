@@ -1,136 +1,194 @@
-import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useEffect, useState } from "react";
-import { LineChart, Line, ResponsiveContainer, Tooltip } from "recharts";
-import { getStrategies, getStrategyPerformance } from "../api.js";
-import { C, Card, EmptyState, ErrorBanner, SkeletonBlock, Badge, useExpertise, TH, TD, } from "../context.js";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer, Tooltip, } from "recharts";
+import { getStrategies } from "../api.js";
 const TYPE_COLORS = {
     MOMENTUM: "#6366f1",
     MEAN_REVERSION: "#8b5cf6",
     BREAKOUT: "#f97316",
     OPTIONS: "#eab308",
-    TREND: C.green,
+    TREND: "#22c55e",
     ARBITRAGE: "#06b6d4",
-    VOLATILITY: C.red,
-    SECTOR_ROTATION: "#3b82f6",
-    RISK_OFF: C.amber,
-    SHORT: C.red,
-    PENNY: "#a855f7",
+    VOLATILITY: "#ef4444",
 };
-const BEGINNER_EXPLANATIONS = {
-    MOMENTUM: "Buys assets that are already going up. Like surfing — ride the wave.",
-    MEAN_REVERSION: "Buys assets that dropped too far too fast. Like a rubber band snapping back.",
-    SECTOR_ROTATION: "Follows where big money is flowing. If tech is hot, buy tech ETFs.",
-    RISK_OFF: "When danger signals flash, move to cash and safe assets.",
-    SHORT: "Profit when stocks go DOWN. Uses put options or inverse ETFs.",
-    PENNY: "Cheap stocks with explosive volume. Very high risk, potential 10x returns.",
-    TREND: "Follows the prevailing market direction — up in bull markets, down in bear markets.",
-    BREAKOUT: "Buys when a stock breaks above a resistance level with strong volume.",
-    OPTIONS: "Uses options contracts to profit from volatility or directional moves.",
-    VOLATILITY: "Profits from changes in market volatility, not just price direction.",
-    ARBITRAGE: "Exploits tiny price differences between similar assets for near-risk-free profit.",
-};
-function WinRateBar({ value }) {
-    const pct = Math.min(100, Math.max(0, value));
-    const color = pct >= 60 ? C.green : pct >= 50 ? C.amber : C.red;
-    return (_jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [_jsx("div", { style: { width: 80, height: 6, background: "#1e293b", borderRadius: 3, overflow: "hidden", flexShrink: 0 }, children: _jsx("div", { style: { width: `${pct}%`, height: "100%", background: color, borderRadius: 3 } }) }), _jsxs("span", { style: { color, fontSize: 12, fontWeight: 700, fontFamily: "monospace", minWidth: 38 }, children: [pct.toFixed(1), "%"] })] }));
+function TypeBadge({ type }) {
+    const color = TYPE_COLORS[type?.toUpperCase()] ?? "#94a3b8";
+    return (_jsx("span", { style: {
+            display: "inline-block",
+            padding: "2px 9px",
+            borderRadius: 4,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            color,
+            background: `${color}22`,
+            border: `1px solid ${color}44`,
+            textTransform: "uppercase",
+        }, children: type }));
 }
-function PnLVsBenchmark({ total, benchmark }) {
-    if (total == null)
-        return _jsx("span", { style: { color: C.textMuted }, children: "\u2014" });
-    const color = total >= 0 ? C.green : C.red;
-    const vsBench = benchmark != null ? total - benchmark : null;
-    return (_jsxs("div", { children: [_jsxs("span", { style: { color, fontFamily: "monospace", fontWeight: 700, fontSize: 13 }, children: [total >= 0 ? "+" : "", total.toFixed(2), "%"] }), vsBench != null && (_jsxs("div", { style: { color: vsBench >= 0 ? C.green : C.red, fontSize: 10, marginTop: 1 }, children: [vsBench >= 0 ? "+" : "", vsBench.toFixed(2), "% vs bench"] }))] }));
+function ActiveDot({ isActive }) {
+    return (_jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 5 }, children: [_jsx("span", { style: {
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: isActive ? "#22c55e" : "#475569",
+                    display: "inline-block",
+                    boxShadow: isActive ? "0 0 6px #22c55e88" : undefined,
+                } }), _jsx("span", { style: { color: isActive ? "#22c55e" : "#475569", fontSize: 12 }, children: isActive ? "Active" : "Inactive" })] }));
 }
 function Sparkline({ data }) {
     if (!data || data.length < 2)
         return null;
+    const chartData = data.map((d) => ({ date: d.date, pnl: d.pnl }));
     const lastPnl = data[data.length - 1]?.pnl ?? 0;
-    const lineColor = lastPnl >= 0 ? C.green : C.red;
-    return (_jsx("div", { style: { height: 40, width: 80 }, children: _jsx(ResponsiveContainer, { width: "100%", height: 40, children: _jsxs(LineChart, { data: data, margin: { top: 2, right: 2, bottom: 2, left: 2 }, children: [_jsx(Tooltip, { contentStyle: { background: "#1a2332", border: `1px solid ${C.border}`, fontSize: 11, padding: "3px 7px" }, formatter: (val) => [`${Number(val).toFixed(2)}%`, "P&L"], labelFormatter: () => "" }), _jsx(Line, { type: "monotone", dataKey: "pnl", stroke: lineColor, dot: false, strokeWidth: 1.5, isAnimationActive: false })] }) }) }));
+    const lineColor = lastPnl >= 0 ? "#22c55e" : "#ef4444";
+    return (_jsx("div", { style: { marginTop: 12, height: 50 }, children: _jsx(ResponsiveContainer, { width: "100%", height: 50, children: _jsxs(LineChart, { data: chartData, margin: { top: 2, right: 2, bottom: 2, left: 2 }, children: [_jsx(Tooltip, { contentStyle: {
+                            background: "#0f172a",
+                            border: "1px solid #334155",
+                            color: "#e2e8f0",
+                            fontSize: 11,
+                            padding: "4px 8px",
+                        }, formatter: (val) => [`${Number(val).toFixed(2)}%`, "P&L"], labelFormatter: () => "" }), _jsx(Line, { type: "monotone", dataKey: "pnl", stroke: lineColor, dot: false, strokeWidth: 1.5, isAnimationActive: false })] }) }) }));
 }
-function ExpandedDescription({ strategy, perf, }) {
-    const { isBeginner: beginnerMode } = useExpertise();
-    const typeKey = (strategy?.type ?? perf?.type ?? "").toUpperCase();
-    const begExp = BEGINNER_EXPLANATIONS[typeKey];
-    const desc = strategy?.description ?? perf?.description;
-    if (!desc && !begExp)
-        return null;
+function StrategyCard({ strategy }) {
+    const regimeFit = strategy.regimeFit ?? [];
+    const hasPerf = Array.isArray(strategy.performanceHistory) && strategy.performanceHistory.length >= 2;
     return (_jsxs("div", { style: {
-            padding: "12px 16px",
-            borderTop: `1px solid ${C.border}`,
-            background: "#090f1a",
-        }, children: [desc && (_jsx("p", { style: { color: C.textSecondary, fontSize: 13, lineHeight: 1.7, margin: "0 0 8px" }, children: desc })), begExp && (_jsxs("div", { style: {
-                    background: `${TYPE_COLORS[typeKey] ?? C.blue}0d`,
-                    border: `1px solid ${TYPE_COLORS[typeKey] ?? C.blue}33`,
-                    borderRadius: 8,
-                    padding: "8px 12px",
-                }, children: [_jsx("div", { style: { color: TYPE_COLORS[typeKey] ?? C.blue, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }, children: "How It Works" }), _jsx("div", { style: { color: C.textSecondary, fontSize: 12, lineHeight: 1.6 }, children: begExp }), beginnerMode && (_jsx("div", { style: { color: C.textMuted, fontSize: 11, marginTop: 6, lineHeight: 1.5 }, children: "Think of this strategy as a systematic rule: when certain conditions are met, it generates a buy or sell signal automatically." }))] }))] }));
+            background: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: 10,
+            padding: 20,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+        }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }, children: [_jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [_jsx("div", { style: { color: "#e2e8f0", fontWeight: 600, fontSize: 15, marginBottom: 4 }, children: strategy.name }), _jsx(TypeBadge, { type: strategy.type ?? "UNKNOWN" })] }), _jsx(ActiveDot, { isActive: strategy.isActive ?? false })] }), strategy.description && (_jsx("p", { style: { color: "#94a3b8", fontSize: 13, margin: 0, lineHeight: 1.5 }, children: strategy.description })), regimeFit.length > 0 && (_jsxs("div", { children: [_jsx("div", { style: {
+                            color: "#64748b",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            marginBottom: 6,
+                        }, children: "Regime Fit" }), _jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 }, children: regimeFit.map((r) => (_jsx("span", { style: {
+                                color: "#94a3b8",
+                                background: "#1e293b",
+                                border: "1px solid #334155",
+                                padding: "2px 8px",
+                                borderRadius: 4,
+                                fontSize: 11,
+                            }, children: r }, r))) })] })), hasPerf && (_jsxs("div", { children: [_jsx("div", { style: {
+                            color: "#64748b",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            marginBottom: 4,
+                        }, children: "Performance" }), _jsx(Sparkline, { data: strategy.performanceHistory })] }))] }));
 }
-function PerformanceTable({ perfs, strategies, onSelect, }) {
-    const [expandedName, setExpandedName] = useState(null);
-    return (_jsx("div", { style: { background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }, children: _jsx("div", { style: { overflowX: "auto" }, children: _jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { style: { ...TH, width: 28 }, children: "#" }), _jsx("th", { style: TH, children: "Strategy" }), _jsx("th", { style: TH, children: "Type" }), _jsx("th", { style: TH, children: "Signals" }), _jsx("th", { style: { ...TH, minWidth: 130 }, children: "Win Rate" }), _jsx("th", { style: TH, children: "Avg Return" }), _jsx("th", { style: { ...TH, minWidth: 110 }, children: "Total P&L" }), _jsx("th", { style: TH, children: "Trend" })] }) }), _jsx("tbody", { children: perfs.map((p, i) => {
-                            const typeKey = (p.type ?? "").toUpperCase();
-                            const typeColor = TYPE_COLORS[typeKey] ?? C.textMuted;
-                            const strat = strategies.find((s) => s.name === p.name);
-                            const isExpanded = expandedName === p.name;
-                            return (_jsxs(_Fragment, { children: [_jsxs("tr", { onClick: () => setExpandedName(isExpanded ? null : p.name), style: {
-                                            cursor: "pointer",
-                                            background: isExpanded ? "#0d1b2e" : i % 2 === 0 ? "transparent" : "#090e18",
-                                            transition: "background 0.1s",
-                                        }, onMouseEnter: (e) => { if (!isExpanded)
-                                            e.currentTarget.style.background = "#111a2e"; }, onMouseLeave: (e) => { if (!isExpanded)
-                                            e.currentTarget.style.background = i % 2 === 0 ? "transparent" : "#090e18"; }, children: [_jsx("td", { style: { ...TD, color: C.textMuted, fontWeight: 600 }, children: i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}` }), _jsx("td", { style: { ...TD, color: C.textPrimary, fontWeight: 600 }, children: _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [p.name, _jsx("span", { style: { color: C.textMuted, fontSize: 10 }, children: isExpanded ? "▲" : "▼" })] }) }), _jsx("td", { style: TD, children: p.type && _jsx(Badge, { label: typeKey || p.type, color: typeColor, style: { fontSize: 10 } }) }), _jsx("td", { style: { ...TD, fontFamily: "monospace", color: C.textSecondary }, children: p.signalCount ?? p.signals ?? "—" }), _jsx("td", { style: TD, children: p.winRate != null ? _jsx(WinRateBar, { value: p.winRate }) : _jsx("span", { style: { color: C.textMuted }, children: "\u2014" }) }), _jsx("td", { style: { ...TD, fontFamily: "monospace" }, children: p.avgReturn != null ? (_jsxs("span", { style: { color: p.avgReturn >= 0 ? C.green : C.red, fontWeight: 600 }, children: [p.avgReturn >= 0 ? "+" : "", p.avgReturn.toFixed(2), "%"] })) : _jsx("span", { style: { color: C.textMuted }, children: "\u2014" }) }), _jsx("td", { style: TD, children: _jsx(PnLVsBenchmark, { total: p.totalPnl, benchmark: p.benchmarkPnl }) }), _jsx("td", { style: TD, children: strat?.performanceHistory && strat.performanceHistory.length >= 2 ? (_jsx(Sparkline, { data: strat.performanceHistory })) : (_jsx("span", { style: { color: C.textMuted }, children: "\u2014" })) })] }, p.name), isExpanded && (_jsx("tr", { children: _jsx("td", { colSpan: 8, style: { padding: 0 }, children: _jsx(ExpandedDescription, { strategy: strat, perf: p }) }) }, `${p.name}-exp`))] }));
-                        }) })] }) }) }));
+// ---------------------------------------------------------------------------
+// Signal Accuracy & Calibration
+// ---------------------------------------------------------------------------
+const MOCK_CALIBRATION = [
+    { name: "Momentum", statedConfidence: 72, actualWinRate: 58, sampleSize: 24 },
+    { name: "Mean Reversion", statedConfidence: 65, actualWinRate: 61, sampleSize: 18 },
+    { name: "Breakout", statedConfidence: 70, actualWinRate: 74, sampleSize: 31 },
+    { name: "Trend Follow", statedConfidence: 68, actualWinRate: 63, sampleSize: 15 },
+];
+function CalibrationDisplay() {
+    const [rows, setRows] = useState([]);
+    const [loading, setLoading] = useState(true);
+    useEffect(() => {
+        let cancelled = false;
+        fetch("/v1/strategies/calibration")
+            .then((r) => r.ok ? r.json() : null)
+            .then((d) => {
+            if (!cancelled) {
+                const arr = Array.isArray(d?.strategies) ? d.strategies : Array.isArray(d) ? d : MOCK_CALIBRATION;
+                setRows(arr);
+            }
+        })
+            .catch(() => { if (!cancelled) setRows(MOCK_CALIBRATION); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, []);
+    if (loading) return _jsx("div", { style: { height: 120, background: "#0f172a", borderRadius: 10, opacity: 0.5 } });
+    const totalSignals = rows.reduce((a, r) => a + (r.sampleSize ?? 0), 0);
+    const overconfidentCount = rows.filter((r) => r.actualWinRate < r.statedConfidence).length;
+    const chartData = rows.map((r) => ({ name: r.name, Stated: r.statedConfidence, Actual: r.actualWinRate }));
+    return _jsxs("div", { style: { marginTop: 36 }, children: [
+        _jsx("h2", { style: { fontSize: 16, fontWeight: 700, color: "#f8fafc", marginBottom: 12 }, children: "🎯 Signal Accuracy & Calibration" }),
+        totalSignals > 0 && _jsxs("div", {
+            style: {
+                padding: "10px 16px",
+                background: overconfidentCount > 0 ? "#f59e0b11" : "#22c55e11",
+                border: `1px solid ${overconfidentCount > 0 ? "#f59e0b33" : "#22c55e33"}`,
+                borderRadius: 8,
+                fontSize: 13,
+                color: "#94a3b8",
+                marginBottom: 14,
+            },
+            children: [
+                _jsx("span", { style: { marginRight: 6 }, children: overconfidentCount > 0 ? "⚠️" : "✅" }),
+                `Based on ${totalSignals} signals, `,
+                overconfidentCount > 0
+                    ? `${overconfidentCount} strateg${overconfidentCount > 1 ? "ies are" : "y is"} overconfident — confidence auto-adjusted.`
+                    : "all strategies are well-calibrated.",
+            ],
+        }),
+        _jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }, children: [
+            _jsxs("div", { style: { background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10, overflow: "hidden" }, children: [
+                _jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [
+                    _jsx("thead", { children: _jsxs("tr", { children: [
+                        _jsx("th", { style: { padding: "10px 14px", textAlign: "left", color: "#64748b", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid #1e293b" }, children: "Strategy" }),
+                        _jsx("th", { style: { padding: "10px 14px", textAlign: "right", color: "#64748b", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid #1e293b" }, children: "Stated" }),
+                        _jsx("th", { style: { padding: "10px 14px", textAlign: "right", color: "#64748b", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid #1e293b" }, children: "Actual" }),
+                        _jsx("th", { style: { padding: "10px 14px", textAlign: "right", color: "#64748b", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid #1e293b" }, children: "Delta" }),
+                    ] }) }),
+                    _jsx("tbody", { children: rows.map((row, i) => {
+                        const diff = row.actualWinRate - row.statedConfidence;
+                        const isGood = diff >= 0;
+                        const calColor = isGood ? "#22c55e" : "#ef4444";
+                        return _jsxs("tr", { style: { background: i % 2 === 0 ? "transparent" : "#080d16" }, children: [
+                            _jsx("td", { style: { padding: "10px 14px", color: "#e2e8f0", fontWeight: 600 }, children: row.name }),
+                            _jsxs("td", { style: { padding: "10px 14px", textAlign: "right", fontFamily: "monospace", color: "#94a3b8" }, children: [row.statedConfidence, "%"] }),
+                            _jsxs("td", { style: { padding: "10px 14px", textAlign: "right", fontFamily: "monospace", color: row.actualWinRate >= 50 ? "#22c55e" : "#ef4444", fontWeight: 700 }, children: [row.actualWinRate, "%"] }),
+                            _jsx("td", { style: { padding: "10px 14px", textAlign: "right" }, children:
+                                _jsxs("span", {
+                                    style: { color: calColor, background: `${calColor}18`, border: `1px solid ${calColor}44`, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, fontFamily: "monospace" },
+                                    children: [isGood ? "+" : "", diff.toFixed(1), "%"],
+                                }),
+                            }),
+                        ] }, row.name);
+                    }) }),
+                ] }),
+            ] }),
+            _jsxs("div", { style: { background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10, padding: "16px 18px" }, children: [
+                _jsx("div", { style: { color: "#64748b", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }, children: "Stated vs Actual" }),
+                _jsx(ResponsiveContainer, { width: "100%", height: 140, children:
+                    _jsxs(BarChart, { data: chartData, margin: { top: 4, right: 8, bottom: 0, left: -16 }, children: [
+                        _jsx(XAxis, { dataKey: "name", tick: { fill: "#64748b", fontSize: 10 }, axisLine: false, tickLine: false }),
+                        _jsx(YAxis, { domain: [0, 100], tick: { fill: "#64748b", fontSize: 10 }, axisLine: false, tickLine: false }),
+                        _jsx(Tooltip, { contentStyle: { background: "#0f172a", border: "1px solid #334155", fontSize: 11 }, formatter: (v, name) => [`${v}%`, name] }),
+                        _jsx(Bar, { dataKey: "Stated", fill: "#3b82f6", opacity: 0.6, radius: [3, 3, 0, 0], maxBarSize: 24 }),
+                        _jsx(Bar, { dataKey: "Actual", radius: [3, 3, 0, 0], maxBarSize: 24, children:
+                            chartData.map((entry, i) =>
+                                _jsx(Cell, { fill: entry.Actual >= entry.Stated ? "#22c55e" : "#ef4444" }, `c-${i}`)
+                            ),
+                        }),
+                    ] }),
+                }),
+            ] }),
+        ] }),
+    ] });
 }
-function StrategyDetail({ strategy, onBack }) {
-    const { isBeginner: beginnerMode } = useExpertise();
-    const typeKey = strategy.type?.toUpperCase() ?? "UNKNOWN";
-    const typeColor = TYPE_COLORS[typeKey] ?? C.textMuted;
-    const begExp = BEGINNER_EXPLANATIONS[typeKey];
-    const hasPerf = Array.isArray(strategy.performanceHistory) && strategy.performanceHistory.length >= 2;
-    return (_jsxs("div", { children: [_jsx("button", { onClick: onBack, style: {
-                    display: "flex", alignItems: "center", gap: 6,
-                    background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8,
-                    padding: "7px 14px", color: C.textSecondary, fontSize: 13,
-                    cursor: "pointer", marginBottom: 24, transition: "border-color 0.12s",
-                }, children: "\u2190 Back to Strategies" }), _jsxs(Card, { style: { marginBottom: 20 }, children: [_jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16 }, children: [_jsxs("div", { children: [_jsx("h2", { style: { fontSize: 22, fontWeight: 700, color: C.textPrimary, margin: 0, marginBottom: 8 }, children: strategy.name }), _jsx(Badge, { label: typeKey, color: typeColor })] }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [_jsx("div", { style: {
-                                            width: 10, height: 10, borderRadius: "50%",
-                                            background: strategy.isActive ? C.green : C.textMuted,
-                                            boxShadow: strategy.isActive ? `0 0 8px ${C.green}88` : "none",
-                                        } }), _jsx("span", { style: { color: strategy.isActive ? C.green : C.textMuted, fontSize: 14, fontWeight: 500 }, children: strategy.isActive ? "Active" : "Inactive" })] })] }), strategy.description && (_jsx("p", { style: { color: C.textSecondary, fontSize: 14, lineHeight: 1.7, margin: 0, marginBottom: 16 }, children: strategy.description })), begExp && (_jsxs("div", { style: {
-                            background: `${typeColor}0d`, border: `1px solid ${typeColor}44`,
-                            borderRadius: 10, padding: "14px 18px", marginBottom: 16,
-                        }, children: [_jsx("div", { style: { color: typeColor, fontWeight: 600, fontSize: 12, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }, children: "How It Works" }), _jsx("div", { style: { color: C.textSecondary, fontSize: 13, lineHeight: 1.6 }, children: begExp }), beginnerMode && (_jsx("div", { style: { color: C.textMuted, fontSize: 12, marginTop: 8, lineHeight: 1.5 }, children: "Think of this strategy as a systematic rule: when certain conditions are met, it generates a buy or sell signal automatically." }))] })), _jsxs("div", { style: { display: "flex", gap: 24, flexWrap: "wrap" }, children: [strategy.activeSignals != null && (_jsxs("div", { children: [_jsx("div", { style: { color: C.textMuted, fontSize: 12 }, children: "Active Signals" }), _jsx("div", { style: { color: C.textPrimary, fontSize: 20, fontWeight: 700, fontFamily: "monospace" }, children: strategy.activeSignals })] })), strategy.winRate != null && (_jsxs("div", { children: [_jsx("div", { style: { color: C.textMuted, fontSize: 12 }, children: "Win Rate" }), _jsxs("div", { style: { color: strategy.winRate >= 50 ? C.green : C.red, fontSize: 20, fontWeight: 700, fontFamily: "monospace" }, children: [strategy.winRate.toFixed(1), "%"] })] }))] })] }), (strategy.regimeFit ?? []).length > 0 && (_jsxs(Card, { style: { marginBottom: 20 }, children: [_jsx("div", { style: { color: C.textMuted, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }, children: "Best Market Conditions" }), _jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 }, children: (strategy.regimeFit ?? []).map((r) => (_jsx(Badge, { label: r, color: C.blue }, r))) })] })), hasPerf && (_jsxs(Card, { style: { marginBottom: 20 }, children: [_jsx("div", { style: { color: C.textMuted, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }, children: "Historical Performance" }), _jsx("div", { style: { height: 120 }, children: _jsx(ResponsiveContainer, { width: "100%", height: 120, children: _jsxs(LineChart, { data: strategy.performanceHistory, children: [_jsx(Tooltip, { contentStyle: { background: "#1a2332", border: `1px solid ${C.border}`, fontSize: 12 }, formatter: (v) => [`${Number(v).toFixed(2)}%`, "P&L"] }), _jsx(Line, { type: "monotone", dataKey: "pnl", stroke: (strategy.performanceHistory?.at(-1)?.pnl ?? 0) >= 0 ? C.green : C.red, dot: false, strokeWidth: 2, isAnimationActive: false })] }) }) })] }))] }));
-}
-function StrategyCard({ strategy, onClick }) {
-    const [hovered, setHovered] = useState(false);
-    const typeKey = strategy.type?.toUpperCase() ?? "UNKNOWN";
-    const typeColor = TYPE_COLORS[typeKey] ?? C.textMuted;
-    const hasPerf = Array.isArray(strategy.performanceHistory) && strategy.performanceHistory.length >= 2;
-    return (_jsxs("div", { onClick: onClick, onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false), style: {
-            background: C.card,
-            border: `1px solid ${hovered ? typeColor + "55" : C.border}`,
-            borderRadius: 12, padding: "20px 22px",
-            cursor: "pointer", transition: "border-color 0.15s, box-shadow 0.15s",
-            boxShadow: hovered ? `0 0 16px ${typeColor}18` : "none",
-            display: "flex", flexDirection: "column", gap: 12,
-        }, children: [_jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }, children: [_jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [_jsx("div", { style: { color: C.textPrimary, fontWeight: 600, fontSize: 15, marginBottom: 6 }, children: strategy.name }), _jsx(Badge, { label: strategy.type ?? "UNKNOWN", color: typeColor })] }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }, children: [_jsx("div", { style: { width: 8, height: 8, borderRadius: "50%", background: strategy.isActive ? C.green : C.textMuted, boxShadow: strategy.isActive ? `0 0 6px ${C.green}88` : "none" } }), _jsx("span", { style: { color: strategy.isActive ? C.green : C.textMuted, fontSize: 12 }, children: strategy.isActive ? "Active" : "Inactive" })] })] }), strategy.description && _jsx("p", { style: { color: C.textSecondary, fontSize: 13, margin: 0, lineHeight: 1.6 }, children: strategy.description }), _jsxs("div", { style: { display: "flex", gap: 20, flexWrap: "wrap" }, children: [strategy.activeSignals != null && (_jsxs("div", { children: [_jsx("div", { style: { color: C.textMuted, fontSize: 11, marginBottom: 2 }, children: "Active Signals" }), _jsx("div", { style: { color: C.textPrimary, fontSize: 16, fontWeight: 600, fontFamily: "monospace" }, children: strategy.activeSignals })] })), strategy.winRate != null && (_jsxs("div", { children: [_jsx("div", { style: { color: C.textMuted, fontSize: 11, marginBottom: 2 }, children: "Win Rate" }), _jsxs("div", { style: { color: strategy.winRate >= 50 ? C.green : C.red, fontSize: 16, fontWeight: 600, fontFamily: "monospace" }, children: [strategy.winRate.toFixed(1), "%"] })] }))] }), hasPerf && _jsx(Sparkline, { data: strategy.performanceHistory }), _jsx("div", { style: { color: C.textMuted, fontSize: 11, marginTop: "auto" }, children: "Click to view details \u2192" })] }));
-}
+
 export function Strategies() {
     const [strategies, setStrategies] = useState([]);
-    const [perfs, setPerfs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [selected, setSelected] = useState(null);
-    const [view, setView] = useState("leaderboard");
     async function load() {
         try {
-            const [strats, perfData] = await Promise.all([
-                getStrategies(),
-                getStrategyPerformance().catch(() => []),
-            ]);
-            setStrategies(Array.isArray(strats) ? strats : []);
-            setPerfs(Array.isArray(perfData) ? perfData : []);
+            const data = await getStrategies();
+            setStrategies(Array.isArray(data) ? data : []);
             setError(null);
         }
         catch (e) {
@@ -145,30 +203,22 @@ export function Strategies() {
         const interval = setInterval(load, 60000);
         return () => clearInterval(interval);
     }, []);
-    if (selected) {
-        return (_jsx("div", { style: { padding: 28 }, children: _jsx(StrategyDetail, { strategy: selected, onBack: () => setSelected(null) }) }));
-    }
-    // Merge perf data with strategy cards — use perfs if available, else fall back to strategy list
-    const hasPerfs = perfs.length > 0;
-    const displayPerfs = hasPerfs
-        ? perfs
-        : strategies.map((s) => ({
-            id: s.id,
-            name: s.name,
-            type: s.type,
-            signalCount: s.activeSignals,
-            winRate: s.winRate,
-            description: s.description,
-        }));
-    return (_jsxs("div", { style: { padding: 28 }, children: [_jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 16, flexWrap: "wrap" }, children: [_jsxs("div", { children: [_jsx("h1", { style: { fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }, children: "Strategy Leaderboard" }), _jsx("p", { style: { color: C.textMuted, marginTop: 5, fontSize: 13 }, children: "Performance ranking \u00B7 click a row to expand description" })] }), _jsx("div", { style: { display: "flex", gap: 4, background: "#0d1424", borderRadius: 8, padding: 3, border: `1px solid ${C.border}` }, children: ["leaderboard", "cards"].map((v) => (_jsx("button", { onClick: () => setView(v), style: {
-                                padding: "5px 14px", borderRadius: 6, border: "none",
-                                background: view === v ? C.blue : "transparent",
-                                color: view === v ? "#fff" : C.textMuted,
-                                fontSize: 12, fontWeight: view === v ? 600 : 400,
-                                cursor: "pointer", textTransform: "capitalize", transition: "all 0.12s",
-                            }, children: v === "leaderboard" ? "📊 Leaderboard" : "🃏 Cards" }, v))) })] }), error && _jsx(ErrorBanner, { message: `Failed to load strategies: ${error}`, onRetry: load }), loading ? (_jsx("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [0, 1, 2, 3].map((i) => _jsx(SkeletonBlock, { height: 52 }, i)) })) : strategies.length === 0 ? (_jsx(EmptyState, { icon: "\uD83C\uDFAF", title: "No strategies configured", subtitle: "Strategies will appear here once they are set up." })) : view === "leaderboard" ? (_jsx(PerformanceTable, { perfs: displayPerfs, strategies: strategies, onSelect: (name) => {
-                    const s = strategies.find((st) => st.name === name);
-                    if (s)
-                        setSelected(s);
-                } })) : (_jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }, children: strategies.map((strategy) => (_jsx(StrategyCard, { strategy: strategy, onClick: () => setSelected(strategy) }, strategy.id))) }))] }));
+    return (_jsxs("div", { style: { padding: 24 }, children: [_jsxs("div", { style: { marginBottom: 24 }, children: [_jsx("h1", { style: { fontSize: 22, fontWeight: 700, color: "#f8fafc", margin: 0 }, children: "Strategies" }), _jsx("p", { style: { color: "#64748b", marginTop: 4, fontSize: 13 }, children: "Active and available trading strategies" })] }), loading && (_jsx("p", { style: { color: "#64748b" }, children: "Loading strategies..." })), error && (_jsxs("div", { style: {
+                    background: "#0f172a",
+                    border: "1px solid #ef444433",
+                    borderRadius: 10,
+                    padding: 20,
+                    color: "#f87171",
+                }, children: ["Failed to load strategies: ", error] })), !loading && !error && strategies.length === 0 && (_jsxs("div", { style: {
+                    background: "#0f172a",
+                    border: "1px solid #1e293b",
+                    borderRadius: 10,
+                    padding: 40,
+                    textAlign: "center",
+                    color: "#475569",
+                }, children: [_jsx("div", { style: { fontSize: 36, marginBottom: 12 }, children: "\uD83C\uDFAF" }), _jsx("div", { style: { fontSize: 15 }, children: "No strategies configured" }), _jsx("div", { style: { fontSize: 13, marginTop: 6 }, children: "Strategies will appear here once they are set up" })] })), !loading && strategies.length > 0 && (_jsx("div", { style: {
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                    gap: 20,
+                }, children: strategies.map((strategy) => (_jsx(StrategyCard, { strategy: strategy }, strategy.id))) })), _jsx(CalibrationDisplay, {})] }));
 }

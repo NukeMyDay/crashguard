@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { getScanner } from "../api.js";
+import { getScanner, getMomentum } from "../api.js";
 import {
   C,
   Card,
@@ -8,6 +8,7 @@ import {
   ErrorBanner,
   SkeletonBlock,
   useExpertise,
+  SectionTitle,
   TH,
   TD,
 } from "../context.js";
@@ -339,8 +340,177 @@ function sortData(data: ScanResult[], col: string): ScanResult[] {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Momentum Ranker tab
+// ---------------------------------------------------------------------------
+
+type MomentumPeriod = "3m" | "6m" | "12m" | "composite";
+
+interface MomentumRow {
+  ticker: string;
+  name?: string;
+  momentum3m?: number;
+  momentum6m?: number;
+  momentum12m?: number;
+  composite?: number;
+  signal?: string;
+}
+
+function signalColor(signal?: string): string {
+  const s = (signal ?? "").toLowerCase();
+  if (s === "strong_buy") return "#16a34a";
+  if (s === "buy") return "#22c55e";
+  if (s === "neutral") return "#64748b";
+  if (s === "reduce") return "#f59e0b";
+  if (s === "avoid") return C.red;
+  return C.textMuted;
+}
+
+function signalLabel(signal?: string): string {
+  return (signal ?? "—").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function MomentumRanker() {
+  const { isBeginner } = useExpertise();
+  const [data, setData] = useState<MomentumRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<MomentumPeriod>("composite");
+
+  useEffect(() => {
+    getMomentum(30)
+      .then((d: MomentumRow[]) => { setData(Array.isArray(d) ? d : []); setError(null); })
+      .catch((e: unknown) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ padding: 20 }}><SkeletonBlock height={300} /></div>;
+  if (error) return <ErrorBanner message={`Failed to load momentum data: ${error}`} />;
+
+  const sortKey: keyof MomentumRow = sortBy === "3m" ? "momentum3m" : sortBy === "6m" ? "momentum6m" : sortBy === "12m" ? "momentum12m" : "composite";
+  const sorted = [...data].sort((a, b) => ((b[sortKey] as number) ?? -Infinity) - ((a[sortKey] as number) ?? -Infinity));
+  const top3 = sorted.slice(0, 3).map((r) => r.ticker);
+  const bottom3 = sorted.slice(-3).map((r) => r.ticker);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {isBeginner && (
+        <div style={{ padding: "10px 14px", background: `${C.blue}0d`, border: `1px solid ${C.blue}22`, borderRadius: 8, fontSize: 12, color: C.textSecondary }}>
+          📚 <strong>Momentum investing:</strong> Stocks that have been rising tend to keep rising. This ranks assets by how strongly they've been trending upward.
+        </div>
+      )}
+
+      {/* Rotation insight */}
+      {top3.length > 0 && bottom3.length > 0 && (
+        <Card style={{ padding: "14px 18px", background: `${C.blue}0a`, border: `1px solid ${C.blue}22` }}>
+          <div style={{ fontSize: 12, color: C.textSecondary }}>
+            <span style={{ color: C.blue, fontWeight: 700 }}>Rotation Signal:</span>{" "}
+            Consider rotating from{" "}
+            <span style={{ color: C.red, fontWeight: 600 }}>{bottom3.join(", ")}</span>
+            {" "}into{" "}
+            <span style={{ color: C.green, fontWeight: 600 }}>{top3.join(", ")}</span>
+            {" "}based on momentum.
+          </div>
+        </Card>
+      )}
+
+      {/* Sort selector */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: C.textMuted, fontSize: 12 }}>Sort by:</span>
+        {(["composite", "3m", "6m", "12m"] as MomentumPeriod[]).map((p) => (
+          <button
+            key={p}
+            onClick={() => setSortBy(p)}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 6,
+              border: `1px solid ${sortBy === p ? C.blue + "66" : C.border}`,
+              background: sortBy === p ? `${C.blue}18` : "transparent",
+              color: sortBy === p ? C.blue : C.textMuted,
+              fontSize: 12,
+              cursor: "pointer",
+              transition: "all 0.1s",
+              fontWeight: sortBy === p ? 600 : 400,
+            }}
+          >
+            {p === "composite" ? "Composite" : p.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {sorted.length === 0 ? (
+        <EmptyState icon="📈" title="No momentum data" subtitle="Momentum rankings will appear here once the data pipeline runs." />
+      ) : (
+        <div style={{ background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#1e293b" }}>
+                  <th style={TH}>Rank</th>
+                  <th style={TH}>Ticker</th>
+                  <th style={TH}>3M</th>
+                  <th style={TH}>6M</th>
+                  <th style={TH}>12M</th>
+                  <th style={TH}>Composite</th>
+                  <th style={TH}>Signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((row, i) => {
+                  const rank = i + 1;
+                  const isTop5 = rank <= 5;
+                  const isBottom5 = rank > sorted.length - 5;
+                  const rowBg = isTop5
+                    ? `${C.green}08`
+                    : isBottom5
+                    ? `${C.red}08`
+                    : i % 2 === 0 ? "transparent" : "#0a1120";
+                  const sc = signalColor(row.signal);
+                  const fmt = (v?: number) => v != null ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%` : "—";
+                  return (
+                    <tr key={row.ticker} style={{ borderTop: i > 0 ? `1px solid ${C.border}` : undefined, background: rowBg }}>
+                      <td style={{ ...TD, color: isTop5 ? C.green : isBottom5 ? C.red : C.textMuted, fontWeight: 700, width: 44, textAlign: "center" }}>
+                        {rank}
+                      </td>
+                      <td style={{ ...TD, color: C.textPrimary, fontWeight: 700, fontSize: 14 }}>
+                        {row.ticker}
+                        {row.name && <span style={{ color: C.textMuted, fontSize: 11, fontWeight: 400, marginLeft: 6 }}>{row.name}</span>}
+                      </td>
+                      <td style={{ ...TD, color: (row.momentum3m ?? 0) >= 0 ? C.green : C.red, fontVariantNumeric: "tabular-nums" }}>{fmt(row.momentum3m)}</td>
+                      <td style={{ ...TD, color: (row.momentum6m ?? 0) >= 0 ? C.green : C.red, fontVariantNumeric: "tabular-nums" }}>{fmt(row.momentum6m)}</td>
+                      <td style={{ ...TD, color: (row.momentum12m ?? 0) >= 0 ? C.green : C.red, fontVariantNumeric: "tabular-nums" }}>{fmt(row.momentum12m)}</td>
+                      <td style={{ ...TD, color: (row.composite ?? 0) >= 0 ? C.green : C.red, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(row.composite)}</td>
+                      <td style={TD}>
+                        <span style={{
+                          color: sc,
+                          background: `${sc}1a`,
+                          border: `1px solid ${sc}44`,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                        }}>
+                          {signalLabel(row.signal)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type ScannerPageTab = "scanner" | "momentum";
+
 export function Scanner() {
   const { isBeginner, isProfessional } = useExpertise();
+  const [pageTab, setPageTab] = useState<ScannerPageTab>("scanner");
   const [activeTab, setActiveTab] = useState<ScannerType>("penny");
   const [sortColMap, setSortColMap] = useState<Record<ScannerType, string>>({
     penny: "score",
@@ -386,16 +556,43 @@ export function Scanner() {
 
   return (
     <div style={{ padding: 28 }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }}>
-          Market Scanner
-        </h1>
-        <p style={{ color: C.textMuted, marginTop: 5, fontSize: 13 }}>
-          Screened opportunities — auto-refreshes every 60 seconds
-        </p>
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }}>
+            Market Scanner
+          </h1>
+          <p style={{ color: C.textMuted, marginTop: 5, fontSize: 13 }}>
+            Screened opportunities — auto-refreshes every 60 seconds
+          </p>
+        </div>
+        {/* Page-level tab */}
+        <div style={{ display: "flex", gap: 4, background: "#0f172a", border: `1px solid ${C.border}`, borderRadius: 10, padding: 4 }}>
+          {(["scanner", "momentum"] as ScannerPageTab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setPageTab(t)}
+              style={{
+                padding: "7px 18px",
+                borderRadius: 7,
+                border: pageTab === t ? `1px solid ${C.blue}44` : "1px solid transparent",
+                background: pageTab === t ? `${C.blue}18` : "transparent",
+                color: pageTab === t ? C.blue : C.textMuted,
+                fontWeight: pageTab === t ? 600 : 400,
+                fontSize: 13,
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {t === "scanner" ? "Scanner" : "Momentum Ranker"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Tabs */}
+      {pageTab === "momentum" && <MomentumRanker />}
+
+      {pageTab === "scanner" && (<>
+      {/* Scanner Tabs */}
       <div
         style={{
           display: "flex",
@@ -504,6 +701,7 @@ export function Scanner() {
       <p style={{ color: "#1e293b", fontSize: 12, marginTop: 12 }}>
         {currentData.length} result{currentData.length !== 1 ? "s" : ""} · Sorted by {sortCol}
       </p>
+      </>)}
     </div>
   );
 }

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { getSignals, getAlerts } from "../api.js";
+import {
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine,
+} from "recharts";
+import { getSignals, getAlerts, getSignalAccuracy } from "../api.js";
 import {
   C,
   Card,
@@ -8,6 +12,7 @@ import {
   SkeletonBlock,
   Badge,
   useExpertise,
+  SectionTitle,
   TH,
   TD,
   InfoIcon,
@@ -721,8 +726,185 @@ function AlertHistory() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Accuracy Report tab
+// ---------------------------------------------------------------------------
+
+interface AccuracyRow {
+  strategy: string;
+  signals: number;
+  targetHitRate: number;
+  avgAccuracy: number;
+  avgMfe: number;
+  avgMae: number;
+}
+
+interface AccuracyData {
+  summary?: {
+    targetHitRate?: number;
+    avgAccuracy?: number;
+    avgMfe?: number;
+    totalSignals?: number;
+  };
+  byStrategy?: AccuracyRow[];
+  calibration?: { confidence: number; accuracy: number }[];
+}
+
+function hitRateColor(rate: number): string {
+  if (rate > 50) return C.green;
+  if (rate >= 35) return "#f59e0b";
+  return C.red;
+}
+
+function AccuracyReport() {
+  const { isBeginner, isProfessional } = useExpertise();
+  const [data, setData] = useState<AccuracyData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSignalAccuracy()
+      .then((d: AccuracyData) => { setData(d); setError(null); })
+      .catch((e: unknown) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <SkeletonBlock height={300} />;
+  if (error) return <ErrorBanner message={`Failed to load accuracy data: ${error}`} />;
+
+  const summary = data?.summary ?? {};
+  const strategies: AccuracyRow[] = data?.byStrategy ?? [];
+  const calibPts = (data?.calibration ?? []).map((p) => ({ x: p.confidence, y: p.accuracy }));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {isBeginner && (
+        <div style={{ padding: "10px 14px", background: `${C.blue}0d`, border: `1px solid ${C.blue}22`, borderRadius: 8, fontSize: 12, color: C.textSecondary }}>
+          📚 <strong>Target hit rate</strong> shows how often our predicted price levels were actually reached. Higher is better.
+        </div>
+      )}
+
+      {/* Summary bar */}
+      <Card style={{ display: "flex", gap: 32, flexWrap: "wrap", padding: "16px 20px" }}>
+        <div>
+          <div style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Target Hit Rate</div>
+          <div style={{ color: summary.targetHitRate != null ? hitRateColor(summary.targetHitRate * 100) : C.textPrimary, fontSize: 22, fontWeight: 700 }}>
+            {summary.targetHitRate != null ? `${(summary.targetHitRate * 100).toFixed(0)}%` : "—"}
+          </div>
+        </div>
+        <div>
+          <div style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Avg Target Accuracy</div>
+          <div style={{ color: C.textPrimary, fontSize: 22, fontWeight: 700 }}>
+            {summary.avgAccuracy != null ? `${(summary.avgAccuracy * 100).toFixed(0)}%` : "—"}
+          </div>
+        </div>
+        <div>
+          <div style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Avg MFE</div>
+          <div style={{ color: C.green, fontSize: 22, fontWeight: 700 }}>
+            {summary.avgMfe != null ? `+${(summary.avgMfe * 100).toFixed(1)}%` : "—"}
+          </div>
+        </div>
+        <div>
+          <div style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Total Signals Tracked</div>
+          <div style={{ color: C.textPrimary, fontSize: 22, fontWeight: 700 }}>
+            {summary.totalSignals ?? "—"}
+          </div>
+        </div>
+      </Card>
+
+      {/* Strategy breakdown table */}
+      {strategies.length > 0 && (
+        <div>
+          <SectionTitle>Strategy Breakdown</SectionTitle>
+          <div style={{ background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#1e293b" }}>
+                    <th style={TH}>Strategy</th>
+                    <th style={TH}>Signals</th>
+                    <th style={TH}>Target Hit Rate</th>
+                    <th style={TH}>Avg Accuracy</th>
+                    {isProfessional && <th style={TH}>Avg MFE</th>}
+                    {isProfessional && <th style={TH}>Avg MAE</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {strategies.map((row, i) => {
+                    const hitPct = row.targetHitRate * 100;
+                    const color = hitRateColor(hitPct);
+                    return (
+                      <tr key={row.strategy} style={{ borderTop: i > 0 ? `1px solid ${C.border}` : undefined }}>
+                        <td style={{ ...TD, color: C.textPrimary, fontWeight: 600 }}>{row.strategy}</td>
+                        <td style={{ ...TD, color: C.textMuted }}>{row.signals}</td>
+                        <td style={TD}>
+                          <span style={{ color, fontWeight: 700 }}>{hitPct.toFixed(0)}%</span>
+                          <span style={{ marginLeft: 6, fontSize: 10, color: color === C.green ? "#166534" : color === C.red ? "#7f1d1d" : "#78350f", background: `${color}22`, padding: "1px 6px", borderRadius: 4, border: `1px solid ${color}44` }}>
+                            {hitPct > 50 ? "Good" : hitPct >= 35 ? "Fair" : "Poor"}
+                          </span>
+                        </td>
+                        <td style={{ ...TD, color: C.textSecondary }}>{(row.avgAccuracy * 100).toFixed(0)}%</td>
+                        {isProfessional && <td style={{ ...TD, color: C.green }}>+{(row.avgMfe * 100).toFixed(1)}%</td>}
+                        {isProfessional && <td style={{ ...TD, color: C.red }}>{(row.avgMae * 100).toFixed(1)}%</td>}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Calibration scatter plot */}
+      {calibPts.length > 0 && (
+        <div>
+          <SectionTitle info="A well-calibrated system shows dots along the diagonal — stated confidence matches actual accuracy.">
+            Calibration Chart
+          </SectionTitle>
+          <Card>
+            <ResponsiveContainer width="100%" height={280}>
+              <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: -10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2436" />
+                <XAxis
+                  type="number" dataKey="x" name="Stated Confidence" domain={[0, 100]}
+                  tick={{ fill: C.textMuted, fontSize: 11 }} axisLine={false} tickLine={false}
+                  label={{ value: "Stated Confidence (%)", position: "insideBottom", offset: -12, fill: C.textMuted, fontSize: 11 }}
+                />
+                <YAxis
+                  type="number" dataKey="y" name="Actual Accuracy" domain={[0, 100]}
+                  tick={{ fill: C.textMuted, fontSize: 11 }} axisLine={false} tickLine={false}
+                  label={{ value: "Actual Accuracy (%)", angle: -90, position: "insideLeft", offset: 16, fill: C.textMuted, fontSize: 11 }}
+                />
+                <Tooltip
+                  cursor={{ strokeDasharray: "3 3" }}
+                  contentStyle={{ background: "#1a2332", border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 12 }}
+                  formatter={(val: any, name: string) => [`${Number(val).toFixed(1)}%`, name]}
+                />
+                {/* Perfect calibration diagonal */}
+                <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 100, y: 100 }]} stroke="#334155" strokeDasharray="6 3" label={{ value: "Perfect", fill: "#334155", fontSize: 10 }} />
+                <Scatter name="Signals" data={calibPts} fill={C.blue} opacity={0.7} />
+              </ScatterChart>
+            </ResponsiveContainer>
+            <p style={{ color: C.textMuted, fontSize: 11, marginTop: 4, textAlign: "center" }}>
+              Dots on the diagonal line = perfectly calibrated confidence scores
+            </p>
+          </Card>
+        </div>
+      )}
+
+      {strategies.length === 0 && calibPts.length === 0 && (
+        <EmptyState icon="📊" title="No accuracy data yet" subtitle="Accuracy data is collected as signals expire and are evaluated against outcomes." />
+      )}
+    </div>
+  );
+}
+
+type SignalsPageTab = "signals" | "accuracy";
+
 export function Signals() {
   const { isBeginner, isProfessional } = useExpertise();
+  const [pageTab, setPageTab] = useState<SignalsPageTab>("signals");
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -768,14 +950,43 @@ export function Signals() {
   return (
     <div style={{ padding: 28 }}>
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }}>
-          Trading Signals
-        </h1>
-        <p style={{ color: C.textMuted, marginTop: 5, fontSize: 13 }}>
-          {activeCount} active · {signals.length} total · auto-refreshes every 60s
-        </p>
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }}>
+            Trading Signals
+          </h1>
+          <p style={{ color: C.textMuted, marginTop: 5, fontSize: 13 }}>
+            {activeCount} active · {signals.length} total · auto-refreshes every 60s
+          </p>
+        </div>
+        {/* Page-level tab switcher */}
+        <div style={{ display: "flex", gap: 4, background: "#0f172a", border: `1px solid ${C.border}`, borderRadius: 10, padding: 4 }}>
+          {(["signals", "accuracy"] as SignalsPageTab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setPageTab(t)}
+              style={{
+                padding: "7px 18px",
+                borderRadius: 7,
+                border: pageTab === t ? `1px solid ${C.blue}44` : "1px solid transparent",
+                background: pageTab === t ? `${C.blue}18` : "transparent",
+                color: pageTab === t ? C.blue : C.textMuted,
+                fontWeight: pageTab === t ? 600 : 400,
+                fontSize: 13,
+                cursor: "pointer",
+                transition: "all 0.15s",
+                textTransform: "capitalize",
+              }}
+            >
+              {t === "signals" ? "Active Signals" : "Accuracy Report"}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {pageTab === "accuracy" && <AccuracyReport />}
+
+      {pageTab === "signals" && (<>
 
       {error && <ErrorBanner message={`Failed to load signals: ${error}`} onRetry={load} />}
 
@@ -928,6 +1139,7 @@ export function Signals() {
       </p>
 
       <AlertHistory />
+      </>)}
     </div>
   );
 }

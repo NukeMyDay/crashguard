@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@marketpulse/db/client";
-import { strategies, signals, signalOutcomes } from "@marketpulse/db/schema";
-import { eq, count } from "drizzle-orm";
+import { strategies, signals, signalOutcomes, strategyCalibrations } from "@marketpulse/db/schema";
+import { eq, count, desc } from "drizzle-orm";
 
 export const strategiesRouter = new Hono();
 
@@ -14,6 +14,31 @@ strategiesRouter.get("/", async (c) => {
     : await db.select().from(strategies);
 
   return c.json(rows);
+});
+
+// GET /v1/strategies/calibration — latest calibration data per strategy
+strategiesRouter.get("/calibration", async (c) => {
+  const rows = await db
+    .select()
+    .from(strategyCalibrations)
+    .orderBy(desc(strategyCalibrations.calibratedAt));
+
+  // Return only the most recent calibration per strategy
+  const latest = new Map<string, typeof rows[0]>();
+  for (const row of rows) {
+    if (!latest.has(row.strategyName)) latest.set(row.strategyName, row);
+  }
+
+  const result = [...latest.values()].map((r) => ({
+    strategyName: r.strategyName,
+    actualWinRate: r.actualWinRate !== null ? Number(r.actualWinRate) : null,
+    statedConfidenceAvg: r.statedConfidenceAvg !== null ? Number(r.statedConfidenceAvg) : null,
+    calibrationFactor: r.calibrationFactor !== null ? Number(r.calibrationFactor) : null,
+    samplesN: r.samplesN,
+    calibratedAt: r.calibratedAt,
+  }));
+
+  return c.json(result);
 });
 
 // GET /v1/strategies/performance — win rate, avg return, total signals per strategy

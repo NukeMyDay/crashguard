@@ -6,8 +6,8 @@
  * `strategies.isActive` flag and logs which strategies are live.
  */
 import { db } from "@marketpulse/db/client";
-import { strategies, marketRegimes } from "@marketpulse/db/schema";
-import { eq, desc, isNull } from "drizzle-orm";
+import { strategies, marketRegimes, marketScores } from "@marketpulse/db/schema";
+import { eq, desc } from "drizzle-orm";
 
 type StrategyType =
   | "momentum"
@@ -28,7 +28,7 @@ const REGIME_STRATEGY_MAP: Record<RegimeLabel, StrategyType[]> = {
   crisis:   ["risk_off", "short"],
 };
 
-async function getCurrentGlobalRegime(): Promise<RegimeLabel | null> {
+async function getCurrentGlobalRegime(): Promise<{ regime: RegimeLabel; crashScore: number } | null> {
   const rows = await db
     .select({ regime: marketRegimes.regime })
     .from(marketRegimes)
@@ -36,20 +36,32 @@ async function getCurrentGlobalRegime(): Promise<RegimeLabel | null> {
     .orderBy(desc(marketRegimes.detectedAt))
     .limit(1);
 
-  return rows[0]?.regime ?? null;
+  if (!rows[0]) return null;
+
+  const scoreRows = await db
+    .select({ crashScore: marketScores.crashScore })
+    .from(marketScores)
+    .where(eq(marketScores.market, "global"))
+    .orderBy(desc(marketScores.calculatedAt))
+    .limit(1);
+
+  const crashScore = scoreRows[0] ? Number(scoreRows[0].crashScore) : 0;
+  return { regime: rows[0].regime, crashScore };
 }
 
 export async function runStrategyEngine(): Promise<void> {
-  const regime = await getCurrentGlobalRegime();
+  const current = await getCurrentGlobalRegime();
 
-  if (!regime) {
+  if (!current) {
     console.warn("[strategy-engine] No current regime detected, skipping");
     return;
   }
 
+  const { regime, crashScore } = current;
   const activeTypes = new Set<StrategyType>(REGIME_STRATEGY_MAP[regime] ?? []);
   const allStrategies = await db.select().from(strategies);
 
+  let switched = false;
   for (const strategy of allStrategies) {
     const shouldBeActive = activeTypes.has(strategy.type as StrategyType);
 
@@ -58,6 +70,7 @@ export async function runStrategyEngine(): Promise<void> {
         .update(strategies)
         .set({ isActive: shouldBeActive, updatedAt: new Date() })
         .where(eq(strategies.id, strategy.id));
+      switched = true;
     }
   }
 
@@ -65,7 +78,27 @@ export async function runStrategyEngine(): Promise<void> {
     .filter((s) => activeTypes.has(s.type as StrategyType))
     .map((s) => s.name);
 
+  if (switched) {
+    console.log(
+      `[strategy-engine] switching to ${regime} strategies — crash score: ${crashScore.toFixed(0)}`
+    );
+  }
+
   console.log(
-    `[strategy-engine] Regime: ${regime} → active strategies: ${activeNames.join(", ") || "none"}`
+    `[strategy-engine] Regime: ${regime} (score: ${crashScore.toFixed(0)}) → active strategies: ${activeNames.join(", ") || "none"}`
   );
+}
+
+export async function getActiveStrategyInfo(): Promise<{ currentRegime: string | null; activeStrategies: string[] }> {
+  const current = await getCurrentGlobalRegime();
+  if (!current) return { currentRegime: null, activeStrategies: [] };
+
+  const { regime } = current;
+  const activeTypes = new Set<StrategyType>(REGIME_STRATEGY_MAP[regime] ?? []);
+  const allStrategies = await db.select({ name: strategies.name, type: strategies.type }).from(strategies);
+  const activeStrategies = allStrategies
+    .filter((s) => activeTypes.has(s.type as StrategyType))
+    .map((s) => s.name);
+
+  return { currentRegime: regime, activeStrategies };
 }
