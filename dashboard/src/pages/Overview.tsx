@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { getDashboard, getRegime, getBriefingToday, getScoreHistory } from "../api.js";
+import { getDashboard, getRegime, getBriefingToday, getScoreHistory, getSignals, getNews, getStrategyPerformance } from "../api.js";
 import { CrashScoreGauge } from "../components/CrashScoreGauge.js";
 import { MarketGrid } from "../components/MarketGrid.js";
 import { AlertsList } from "../components/AlertsList.js";
@@ -203,6 +203,9 @@ export function Overview() {
   const [regime, setRegime] = useState<any>(null);
   const [briefing, setBriefing] = useState<any>(null);
   const [indicators, setIndicators] = useState<any[]>([]);
+  const [latestSignals, setLatestSignals] = useState<any[]>([]);
+  const [latestNews, setLatestNews] = useState<any[]>([]);
+  const [topStrategy, setTopStrategy] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [dashError, setDashError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -228,6 +231,25 @@ export function Overview() {
 
     getRegime().then(setRegime).catch(() => setRegime(null));
     getBriefingToday().then(setBriefing).catch(() => setBriefing(null));
+
+    // Fetch mini-panel data
+    getSignals()
+      .then((sigs) => {
+        const active = sigs.filter((s: any) => !["expired", "closed", "cancelled"].includes((s.status ?? "").toLowerCase()));
+        setLatestSignals(active.slice(0, 3));
+      })
+      .catch(() => {});
+    getNews(5)
+      .then((news) => setLatestNews(Array.isArray(news) ? news.slice(0, 3) : []))
+      .catch(() => {});
+    getStrategyPerformance()
+      .then((perfs) => {
+        if (Array.isArray(perfs) && perfs.length > 0) {
+          const sorted = [...perfs].sort((a, b) => (b.winRate ?? 0) - (a.winRate ?? 0));
+          setTopStrategy(sorted[0]);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -294,7 +316,7 @@ export function Overview() {
 
       {dashboard && (
         <>
-          {/* Global Crash Score */}
+          {/* Global Crash Score — HERO */}
           {globalScore && (
             <div style={{ marginBottom: 32 }}>
               <SectionTitle
@@ -302,9 +324,24 @@ export function Overview() {
               >
                 Global Crash Score
               </SectionTitle>
-              <Card style={{ display: "flex", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
-                <CrashScoreGauge score={Number(globalScore.crashScore)} size={220} />
-                <div style={{ flex: 1, minWidth: 200 }}>
+              <Card style={{ display: "flex", alignItems: "center", gap: 48, flexWrap: "wrap" }}>
+                {/* Larger gauge — hero element */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                  <CrashScoreGauge score={Number(globalScore.crashScore)} size={280} />
+                  {/* Pulsing live indicator */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: -8 }}>
+                    <div
+                      style={{
+                        width: 6, height: 6, borderRadius: "50%",
+                        background: C.green,
+                        boxShadow: `0 0 8px ${C.green}`,
+                        animation: "pulse 2s infinite",
+                      }}
+                    />
+                    <span style={{ color: C.textMuted, fontSize: 11 }}>Live · updates every 60s</span>
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 220 }}>
                   {/* Component scores */}
                   {globalScore.componentScores && (
                     <div>
@@ -315,14 +352,14 @@ export function Overview() {
                           fontWeight: 600,
                           textTransform: "uppercase",
                           letterSpacing: "0.06em",
-                          marginBottom: 14,
+                          marginBottom: 16,
                         }}
                       >
                         Component Breakdown
                       </div>
                       {Object.entries(globalScore.componentScores).map(([k, v]: [string, any]) =>
                         v != null ? (
-                          <div key={k} style={{ marginBottom: 10 }}>
+                          <div key={k} style={{ marginBottom: 12 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                               <span style={{ color: C.textSecondary, fontSize: 12, textTransform: "capitalize" }}>
                                 {k}
@@ -331,13 +368,14 @@ export function Overview() {
                                 style={{
                                   color: Number(v) >= 75 ? C.red : Number(v) >= 50 ? C.amber : C.green,
                                   fontSize: 12,
-                                  fontWeight: 600,
+                                  fontWeight: 700,
+                                  fontFamily: "monospace",
                                 }}
                               >
                                 {Number(v).toFixed(0)}
                               </span>
                             </div>
-                            <div style={{ height: 5, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
+                            <div style={{ height: 6, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
                               <div
                                 style={{
                                   width: `${Math.min(100, Number(v))}%`,
@@ -380,6 +418,123 @@ export function Overview() {
               Markets
             </SectionTitle>
             <MarketGrid scores={dashboard.scores} regimeByMarket={regimeByMarket} />
+          </div>
+
+          {/* Mini-panels: Latest Signals + Breaking News + Top Strategy */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20, marginBottom: 32 }}>
+            {/* Latest Signals mini-panel */}
+            <Card style={{ padding: "16px 18px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <span style={{ color: C.textSecondary, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  📈 Latest Signals
+                </span>
+                <span style={{ color: C.textMuted, fontSize: 11 }}>{latestSignals.length} active</span>
+              </div>
+              {latestSignals.length === 0 ? (
+                <div style={{ color: C.textMuted, fontSize: 12 }}>No active signals</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {latestSignals.map((sig: any) => {
+                    const isLong = ["BUY", "LONG"].includes((sig.action ?? "").toUpperCase());
+                    const dirColor = isLong ? C.green : C.red;
+                    const confidence = sig.confidence ?? sig.strength ?? 0;
+                    return (
+                      <div key={sig.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <span
+                          style={{
+                            color: dirColor, background: `${dirColor}18`, border: `1px solid ${dirColor}44`,
+                            padding: "1px 7px", borderRadius: 3, fontSize: 10, fontWeight: 800, flexShrink: 0,
+                          }}
+                        >
+                          {isLong ? "LONG" : "SHORT"}
+                        </span>
+                        <span style={{ color: C.textPrimary, fontWeight: 700, fontFamily: "monospace", fontSize: 13, flex: 1 }}>
+                          {sig.instrument ?? "—"}
+                        </span>
+                        <span style={{ color: confidence >= 75 ? C.green : confidence >= 50 ? C.amber : C.red, fontSize: 11, fontFamily: "monospace", fontWeight: 600 }}>
+                          {confidence.toFixed(0)}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Breaking News mini-panel */}
+            <Card style={{ padding: "16px 18px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <span style={{ color: C.textSecondary, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  📰 Breaking News
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.green, boxShadow: `0 0 4px ${C.green}` }} />
+                  <span style={{ color: C.textMuted, fontSize: 11 }}>Live</span>
+                </div>
+              </div>
+              {latestNews.length === 0 ? (
+                <div style={{ color: C.textMuted, fontSize: 12 }}>No news loaded</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {latestNews.map((item: any) => {
+                    const sentiment = item.sentiment?.toLowerCase();
+                    const sentColor = sentiment === "bullish" ? C.green : sentiment === "bearish" ? C.red : C.amber;
+                    return (
+                      <div key={item.id} style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 8 }}>
+                        <p style={{ color: C.textSecondary, fontSize: 12, margin: "0 0 4px", lineHeight: 1.5 }}>
+                          {item.headline}
+                        </p>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {item.source && <span style={{ color: C.textMuted, fontSize: 10 }}>{item.source}</span>}
+                          {sentiment && (
+                            <span style={{ color: sentColor, fontSize: 10, fontWeight: 700, textTransform: "capitalize" }}>
+                              · {sentiment}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Top Strategy this week mini-panel */}
+            <Card style={{ padding: "16px 18px" }}>
+              <div style={{ marginBottom: 14 }}>
+                <span style={{ color: C.textSecondary, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  🏆 Top Strategy
+                </span>
+              </div>
+              {!topStrategy ? (
+                <div style={{ color: C.textMuted, fontSize: 12 }}>No performance data</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ color: C.textPrimary, fontWeight: 700, fontSize: 15 }}>{topStrategy.name}</div>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                    {topStrategy.winRate != null && (
+                      <div>
+                        <div style={{ color: C.textMuted, fontSize: 10, marginBottom: 3 }}>WIN RATE</div>
+                        <div style={{ color: topStrategy.winRate >= 50 ? C.green : C.red, fontFamily: "monospace", fontSize: 18, fontWeight: 700 }}>
+                          {topStrategy.winRate.toFixed(1)}%
+                        </div>
+                      </div>
+                    )}
+                    {topStrategy.totalPnl != null && (
+                      <div>
+                        <div style={{ color: C.textMuted, fontSize: 10, marginBottom: 3 }}>TOTAL P&L</div>
+                        <div style={{ color: topStrategy.totalPnl >= 0 ? C.green : C.red, fontFamily: "monospace", fontSize: 18, fontWeight: 700 }}>
+                          {topStrategy.totalPnl >= 0 ? "+" : ""}{topStrategy.totalPnl.toFixed(2)}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ color: C.textMuted, fontSize: 11, marginTop: 2 }}>
+                    Best performer by win rate this period
+                  </div>
+                </div>
+              )}
+            </Card>
           </div>
 
           {/* Today's Briefing */}

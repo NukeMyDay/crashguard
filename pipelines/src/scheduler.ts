@@ -7,10 +7,12 @@ import { fetchSectorETFs } from "./collectors/sector-etfs.js";
 import { fetchVIXTermStructure } from "./collectors/vix-term-structure.js";
 import { fetchMarketBreadth } from "./collectors/market-breadth.js";
 import { scrapeOpenInsider } from "./collectors/open-insider.js";
+import { fetchNewsItems } from "./collectors/news.js";
 import { calculateMarketScores } from "./scoring/calculator.js";
 import { detectMarketRegimes } from "./scoring/regime-detector.js";
 import { runStrategyEngine } from "./engines/strategy-engine.js";
 import { generateSignals } from "./engines/signal-generator.js";
+import { evaluateSignalOutcomes } from "./engines/signal-evaluator.js";
 import { runAllScanners } from "./scanners/index.js";
 import { generateDailyBriefings } from "./briefing/briefing-generator.js";
 
@@ -23,7 +25,7 @@ async function runScoringAndIntelligence(): Promise<void> {
 
 export const scheduler = {
   start() {
-    // Hourly: fetch fast-moving indicators
+    // Hourly: fetch fast-moving indicators + news
     cron.schedule("0 * * * *", async () => {
       console.log("[scheduler] Running hourly data collection");
       await Promise.allSettled([
@@ -31,6 +33,7 @@ export const scheduler = {
         fetchFearGreedIndex(),
         fetchSectorETFs(),
         fetchVIXTermStructure(),
+        fetchNewsItems(),
       ]);
       await runScoringAndIntelligence();
     });
@@ -52,6 +55,12 @@ export const scheduler = {
     cron.schedule("0 7 * * *", async () => {
       console.log("[scheduler] Generating daily briefings");
       await generateDailyBriefings();
+    });
+
+    // Daily at 8am UTC: evaluate signal outcomes from yesterday
+    cron.schedule("0 8 * * *", async () => {
+      console.log("[scheduler] Evaluating signal outcomes");
+      await evaluateSignalOutcomes();
     });
 
     console.log("[scheduler] Cron jobs registered");

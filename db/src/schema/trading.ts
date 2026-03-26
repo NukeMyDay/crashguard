@@ -101,6 +101,11 @@ export const signals = pgTable(
     direction: signalDirectionEnum("direction").notNull(),
     strength: decimal("strength", { precision: 5, scale: 2 }).notNull(),
     price: decimal("price", { precision: 20, scale: 6 }),
+    stopLoss: decimal("stop_loss", { precision: 20, scale: 6 }),
+    targetPrice: decimal("target_price", { precision: 20, scale: 6 }),
+    confidenceScore: decimal("confidence_score", { precision: 5, scale: 2 }),
+    positionSizePct: decimal("position_size_pct", { precision: 5, scale: 2 }),
+    riskFactors: jsonb("risk_factors").default("[]"),
     rationale: text("rationale"),
     generatedAt: timestamp("generated_at").notNull().defaultNow(),
     expiresAt: timestamp("expires_at"),
@@ -189,6 +194,82 @@ export const portfolios = pgTable("portfolios", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// ─── news_items ───────────────────────────────────────────────────────────────
+
+export const newsItems = pgTable(
+  "news_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    headline: text("headline").notNull(),
+    url: text("url").notNull(),
+    source: varchar("source", { length: 100 }).notNull(),
+    summary: text("summary"),
+    sentiment: varchar("sentiment", { length: 20 }),
+    tickers: jsonb("tickers").notNull().default("[]"),
+    publishedAt: timestamp("published_at"),
+    fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    publishedAtIdx: index("news_items_published_at_idx").on(table.publishedAt),
+    sourceIdx: index("news_items_source_idx").on(table.source),
+    fetchedAtIdx: index("news_items_fetched_at_idx").on(table.fetchedAt),
+  })
+);
+
+// ─── chat_messages ────────────────────────────────────────────────────────────
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: varchar("conversation_id", { length: 255 }).notNull(),
+    role: varchar("role", { length: 20 }).notNull(), // "user" | "assistant"
+    content: text("content").notNull(),
+    tokensUsed: integer("tokens_used"),
+    model: varchar("model", { length: 100 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    conversationIdIdx: index("chat_messages_conversation_id_idx").on(table.conversationId),
+    createdAtIdx: index("chat_messages_created_at_idx").on(table.createdAt),
+  })
+);
+
+// ─── signal_outcomes ──────────────────────────────────────────────────────────
+
+export const signalOutcomeEnum = pgEnum("signal_outcome", [
+  "win",
+  "loss",
+  "neutral",
+]);
+
+export const signalOutcomes = pgTable(
+  "signal_outcomes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    signalId: uuid("signal_id")
+      .notNull()
+      .references(() => signals.id, { onDelete: "cascade" }),
+    symbol: varchar("symbol", { length: 20 }).notNull(),
+    direction: signalDirectionEnum("direction").notNull(),
+    entryPrice: decimal("entry_price", { precision: 20, scale: 6 }).notNull(),
+    exitPrice: decimal("exit_price", { precision: 20, scale: 6 }).notNull(),
+    pnlPercent: decimal("pnl_percent", { precision: 10, scale: 4 }).notNull(),
+    outcome: signalOutcomeEnum("outcome").notNull(),
+    evaluatedAt: timestamp("evaluated_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    signalIdIdx: index("signal_outcomes_signal_id_idx").on(table.signalId),
+    symbolIdx: index("signal_outcomes_symbol_idx").on(table.symbol),
+    evaluatedAtIdx: index("signal_outcomes_evaluated_at_idx").on(
+      table.evaluatedAt
+    ),
+    outcomeIdx: index("signal_outcomes_outcome_idx").on(table.outcome),
+  })
+);
 
 // ─── trades ───────────────────────────────────────────────────────────────────
 

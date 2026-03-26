@@ -26,6 +26,8 @@ services:
     environment:
       DATABASE_URL: postgres://marketpulse:marketpulse@postgres:5432/marketpulse
       PORT: 3000
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:-marketpulse-default-secret-change-me}
     ports:
       - "3000:3000"
     depends_on:

@@ -95,11 +95,75 @@ interface GeneratedSignal {
   direction: "long" | "short";
   strength: number;
   price: number;
+  stopLoss: number;
+  targetPrice: number;
+  confidenceScore: number;
+  positionSizePct: number;
+  riskFactors: string[];
   rationale: string;
   metadata: Record<string, unknown>;
 }
 
-async function generateMomentumSignals(): Promise<GeneratedSignal[]> {
+// ─── Enhanced signal field helpers ───────────────────────────────────────────
+
+function computeEnhancedFields(
+  direction: "long" | "short",
+  price: number,
+  strength: number,
+  indicatorMap: Map<string, number>
+): {
+  stopLoss: number;
+  targetPrice: number;
+  confidenceScore: number;
+  positionSizePct: number;
+  riskFactors: string[];
+} {
+  const vix = indicatorMap.get("vix") ?? 50;
+
+  // Stop-loss: 5–8% from entry, wider when VIX is elevated
+  const baseStop = 0.05 + (vix / 100) * 0.03; // 5–8%
+  const stopDistance = price * baseStop;
+
+  const stopLoss =
+    direction === "long"
+      ? parseFloat((price - stopDistance).toFixed(6))
+      : parseFloat((price + stopDistance).toFixed(6));
+
+  // Target: 1.5x–2.5x the stop distance (risk/reward)
+  const rrRatio = 1.5 + (strength / 100) * 1.0; // 1.5–2.5
+  const targetDistance = stopDistance * rrRatio;
+  const targetPrice =
+    direction === "long"
+      ? parseFloat((price + targetDistance).toFixed(6))
+      : parseFloat((price - targetDistance).toFixed(6));
+
+  // Confidence: strength + bonus for regime alignment (using vix as proxy — lower vix = more bullish alignment for longs)
+  const regimeBonus = direction === "long" ? Math.max(0, (100 - vix) / 4) : vix / 4;
+  const confidenceScore = Math.min(100, Math.round(strength * 0.7 + regimeBonus));
+
+  // Position size: Kelly approximation — max 5% per position
+  const positionSizePct = parseFloat(
+    Math.min(5, (strength / 100) * 0.1 * 100).toFixed(2)
+  );
+
+  // Risk factors
+  const riskFactors: string[] = [];
+  if (vix > 60) riskFactors.push("Extreme VIX environment");
+  else if (vix > 40) riskFactors.push("Elevated VIX environment");
+
+  const yieldCurve = indicatorMap.get("yield-curve-2y10y");
+  if (yieldCurve !== undefined && yieldCurve > 60) riskFactors.push("Inverted yield curve");
+
+  const creditSpreads = indicatorMap.get("credit-spreads-hy");
+  if (creditSpreads !== undefined && creditSpreads > 65) riskFactors.push("Wide credit spreads");
+
+  const fearGreed = indicatorMap.get("fear-greed-index");
+  if (fearGreed !== undefined && fearGreed > 70) riskFactors.push("Extreme fear sentiment");
+
+  return { stopLoss, targetPrice, confidenceScore, positionSizePct, riskFactors };
+}
+
+async function generateMomentumSignals(indicatorMap: Map<string, number>): Promise<GeneratedSignal[]> {
   const results: GeneratedSignal[] = [];
 
   for (const ticker of MOMENTUM_CANDIDATES) {
@@ -109,11 +173,13 @@ async function generateMomentumSignals(): Promise<GeneratedSignal[]> {
     // Momentum: RSI between 50–70 (trending up, not overbought) + positive change
     if (quote.rsi14 !== null && quote.rsi14 >= 50 && quote.rsi14 <= 72 && quote.changePercent > 0) {
       const strength = Math.min(100, Math.round(((quote.rsi14 - 50) / 22) * 60 + quote.changePercent * 5));
+      const enhanced = computeEnhancedFields("long", quote.price, strength, indicatorMap);
       results.push({
         symbol: ticker,
         direction: "long",
         strength,
         price: quote.price,
+        ...enhanced,
         rationale: `Momentum: RSI ${quote.rsi14.toFixed(1)} in bullish zone, +${quote.changePercent.toFixed(2)}% today`,
         metadata: { rsi14: quote.rsi14, changePercent: quote.changePercent, strategy: "momentum" },
       });
@@ -125,7 +191,7 @@ async function generateMomentumSignals(): Promise<GeneratedSignal[]> {
   return results.sort((a, b) => b.strength - a.strength).slice(0, 3);
 }
 
-async function generateMeanReversionSignals(): Promise<GeneratedSignal[]> {
+async function generateMeanReversionSignals(indicatorMap: Map<string, number>): Promise<GeneratedSignal[]> {
   const results: GeneratedSignal[] = [];
 
   for (const ticker of MEAN_REVERSION_CANDIDATES) {
@@ -135,11 +201,13 @@ async function generateMeanReversionSignals(): Promise<GeneratedSignal[]> {
     // Mean reversion: RSI < 35 (oversold), price declined
     if (quote.rsi14 !== null && quote.rsi14 < 35) {
       const strength = Math.min(100, Math.round(((35 - quote.rsi14) / 35) * 80 + 20));
+      const enhanced = computeEnhancedFields("long", quote.price, strength, indicatorMap);
       results.push({
         symbol: ticker,
         direction: "long",
         strength,
         price: quote.price,
+        ...enhanced,
         rationale: `Mean Reversion: RSI ${quote.rsi14.toFixed(1)} oversold, bounce candidate`,
         metadata: { rsi14: quote.rsi14, changePercent: quote.changePercent, strategy: "mean_reversion" },
       });
@@ -170,11 +238,13 @@ async function generateSectorRotationSignals(indicatorMap: Map<string, number>):
   for (const { ticker, quote } of top3) {
     if (quote.changePercent > avgChange + 0.5) {
       const strength = Math.min(100, Math.round(60 + (quote.changePercent - avgChange) * 10));
+      const enhanced = computeEnhancedFields("long", quote.price, strength, indicatorMap);
       results.push({
         symbol: ticker,
         direction: "long",
         strength,
         price: quote.price,
+        ...enhanced,
         rationale: `Sector Rotation: ${ticker} outperforming peers by ${(quote.changePercent - avgChange).toFixed(2)}%`,
         metadata: { changePercent: quote.changePercent, avgSectorChange: avgChange, strategy: "sector_rotation" },
       });
@@ -184,7 +254,7 @@ async function generateSectorRotationSignals(indicatorMap: Map<string, number>):
   return results;
 }
 
-async function generateRiskOffSignals(): Promise<GeneratedSignal[]> {
+async function generateRiskOffSignals(indicatorMap: Map<string, number>): Promise<GeneratedSignal[]> {
   const results: GeneratedSignal[] = [];
 
   for (const ticker of RISK_OFF_CANDIDATES) {
@@ -194,11 +264,13 @@ async function generateRiskOffSignals(): Promise<GeneratedSignal[]> {
     // Risk-off: any safe haven moving up
     if (quote.changePercent > 0) {
       const strength = Math.min(100, Math.round(50 + quote.changePercent * 15));
+      const enhanced = computeEnhancedFields("long", quote.price, strength, indicatorMap);
       results.push({
         symbol: ticker,
         direction: "long",
         strength,
         price: quote.price,
+        ...enhanced,
         rationale: `Risk-Off: ${ticker} safe-haven gaining +${quote.changePercent.toFixed(2)}% in risk environment`,
         metadata: { changePercent: quote.changePercent, strategy: "risk_off" },
       });
@@ -209,7 +281,7 @@ async function generateRiskOffSignals(): Promise<GeneratedSignal[]> {
   return results.sort((a, b) => b.strength - a.strength).slice(0, 3);
 }
 
-async function generateShortSignals(): Promise<GeneratedSignal[]> {
+async function generateShortSignals(indicatorMap: Map<string, number>): Promise<GeneratedSignal[]> {
   const results: GeneratedSignal[] = [];
 
   for (const ticker of SHORT_CANDIDATES) {
@@ -219,11 +291,13 @@ async function generateShortSignals(): Promise<GeneratedSignal[]> {
     // Short: RSI > 72 (overbought) or strong negative momentum
     if (quote.rsi14 !== null && quote.rsi14 > 72) {
       const strength = Math.min(100, Math.round(((quote.rsi14 - 72) / 28) * 70 + 30));
+      const enhanced = computeEnhancedFields("short", quote.price, strength, indicatorMap);
       results.push({
         symbol: ticker,
         direction: "short",
         strength,
         price: quote.price,
+        ...enhanced,
         rationale: `Short: RSI ${quote.rsi14.toFixed(1)} overbought, mean-reversion short opportunity`,
         metadata: { rsi14: quote.rsi14, changePercent: quote.changePercent, strategy: "short" },
       });
@@ -276,19 +350,19 @@ export async function generateSignals(): Promise<void> {
 
     switch (strategy.type as StrategyType) {
       case "momentum":
-        generated = await generateMomentumSignals();
+        generated = await generateMomentumSignals(indicatorMap);
         break;
       case "mean_reversion":
-        generated = await generateMeanReversionSignals();
+        generated = await generateMeanReversionSignals(indicatorMap);
         break;
       case "sector_rotation":
         generated = await generateSectorRotationSignals(indicatorMap);
         break;
       case "risk_off":
-        generated = await generateRiskOffSignals();
+        generated = await generateRiskOffSignals(indicatorMap);
         break;
       case "short":
-        generated = await generateShortSignals();
+        generated = await generateShortSignals(indicatorMap);
         break;
       case "penny":
         // Penny signals come from the scanner_results (handled by scanner module)
@@ -305,6 +379,11 @@ export async function generateSignals(): Promise<void> {
         direction: sig.direction,
         strength: String(sig.strength),
         price: String(sig.price),
+        stopLoss: String(sig.stopLoss),
+        targetPrice: String(sig.targetPrice),
+        confidenceScore: String(sig.confidenceScore),
+        positionSizePct: String(sig.positionSizePct),
+        riskFactors: sig.riskFactors,
         rationale: sig.rationale,
         expiresAt,
         status: "active",

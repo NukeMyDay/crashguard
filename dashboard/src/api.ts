@@ -68,3 +68,11 @@ export function getRegimeHistory() {
 export function getIndicatorHistory(slug: string, days: number) {
   return fetchJSON<any[]>(`/indicators/${encodeURIComponent(slug)}/history?days=${days}`);
 }
+
+export function getNews(limit = 50) {
+  return fetchJSON<any[]>(`/news?limit=${limit}`);
+}
+
+export function getStrategyPerformance() {
+  return fetchJSON<any[]>("/strategies/performance");
+}

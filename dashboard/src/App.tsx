@@ -5,17 +5,20 @@ import { Scanner } from "./pages/Scanner.js";
 import { Strategies } from "./pages/Strategies.js";
 import { Portfolio } from "./pages/Portfolio.js";
 import { History } from "./pages/History.js";
+import { News } from "./pages/News.js";
+import { Settings } from "./pages/Settings.js";
 import { BeginnerModeProvider, useBeginnerMode, C } from "./context.js";
+import { ChatPanel } from "./components/ChatPanel.js";
 
 // ---------------------------------------------------------------------------
 // Hash-based routing
 // ---------------------------------------------------------------------------
 
-type Route = "/" | "/signals" | "/scanner" | "/strategies" | "/portfolio" | "/history";
+type Route = "/" | "/signals" | "/scanner" | "/strategies" | "/portfolio" | "/history" | "/news" | "/settings";
 
 function getHashRoute(): Route {
   const hash = window.location.hash.replace(/^#/, "") || "/";
-  const valid: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/history"];
+  const valid: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/history", "/news", "/settings"];
   return valid.includes(hash as Route) ? (hash as Route) : "/";
 }
 
@@ -30,11 +33,11 @@ function useHashRoute(): [Route, (r: Route) => void] {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  // Keyboard shortcuts: 1–6
+  // Keyboard shortcuts: 1–7
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const routes: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/history"];
+      const routes: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/history", "/news", "/settings"];
       const idx = parseInt(e.key) - 1;
       if (idx >= 0 && idx < routes.length) {
         navigate(routes[idx]);
@@ -70,7 +73,73 @@ const NAV_ITEMS: NavItem[] = [
   { route: "/strategies", label: "Strategies", icon: "🎯", shortcut: "4" },
   { route: "/portfolio", label: "Portfolio", icon: "💼", shortcut: "5" },
   { route: "/history", label: "History", icon: "📅", shortcut: "6" },
+  { route: "/news", label: "News", icon: "📰", shortcut: "7" },
+  { route: "/settings", label: "Settings", icon: "⚙️", shortcut: "8" },
 ];
+
+// ---------------------------------------------------------------------------
+// Market clock + status
+// ---------------------------------------------------------------------------
+
+interface MarketStatus {
+  label: string;
+  tz: string;
+  openHour: number;  // UTC open
+  closeHour: number; // UTC close
+  days: number[];    // 1=Mon..5=Fri
+}
+
+const MARKETS: MarketStatus[] = [
+  { label: "US", tz: "EST", openHour: 14, closeHour: 21, days: [1, 2, 3, 4, 5] },   // 9:30–16:00 EST = 14:30–21:00 UTC approx
+  { label: "EU", tz: "CET", openHour: 8, closeHour: 16, days: [1, 2, 3, 4, 5] },    // 9:00–17:00 CET = 8:00–16:00 UTC
+  { label: "AS", tz: "JST", openHour: 0, closeHour: 6, days: [1, 2, 3, 4, 5] },     // 9:00–15:00 JST = 0:00–6:00 UTC
+];
+
+function getMarketState(market: MarketStatus, now: Date): "open" | "pre" | "closed" {
+  const day = now.getUTCDay(); // 0=Sun, 1=Mon..5=Fri, 6=Sat
+  const hour = now.getUTCHours();
+  if (!market.days.includes(day)) return "closed";
+  if (hour >= market.openHour && hour < market.closeHour) return "open";
+  if (hour >= market.openHour - 1 && hour < market.openHour) return "pre";
+  return "closed";
+}
+
+function MarketStatusBar() {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 10_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const utcTime = now.toUTCString().slice(17, 22) + " UTC";
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ color: C.textMuted, fontSize: 11, fontFamily: "monospace" }}>{utcTime}</span>
+      <span style={{ color: "#1e293b" }}>|</span>
+      {MARKETS.map((m) => {
+        const state = getMarketState(m, now);
+        const color = state === "open" ? C.green : state === "pre" ? C.amber : "#2a3a50";
+        const label = state === "open" ? "Open" : state === "pre" ? "Pre" : "Closed";
+        return (
+          <div key={m.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div
+              style={{
+                width: 5, height: 5, borderRadius: "50%", background: color,
+                boxShadow: state === "open" ? `0 0 5px ${color}` : "none",
+              }}
+            />
+            <span style={{ color: state === "open" ? C.textSecondary : "#2a3a50", fontSize: 11, fontWeight: state === "open" ? 600 : 400 }}>
+              {m.label}
+              <span style={{ color, marginLeft: 2, fontSize: 10 }}>{label}</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Auto-refresh header
@@ -253,7 +322,7 @@ function Sidebar({ route, navigate }: { route: Route; navigate: (r: Route) => vo
       <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
         <div style={{ color: "#1e293b", fontSize: 11 }}>MarketPulse v1.0</div>
         <div style={{ color: "#131d2e", fontSize: 10, marginTop: 1 }}>
-          Press 1–6 to navigate
+          Press 1–7 to navigate
         </div>
       </div>
     </aside>
@@ -272,6 +341,8 @@ function TopHeader({ route }: { route: Route }) {
     "/strategies": "Strategies",
     "/portfolio": "Portfolio",
     "/history": "Historical Analysis",
+    "/news": "News Feed",
+    "/settings": "Settings",
   };
 
   return (
@@ -280,10 +351,12 @@ function TopHeader({ route }: { route: Route }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "12px 24px",
+        padding: "10px 24px",
         borderBottom: `1px solid ${C.border}`,
         background: "#0b0f18",
         flexShrink: 0,
+        gap: 16,
+        flexWrap: "wrap",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -293,7 +366,8 @@ function TopHeader({ route }: { route: Route }) {
           {pageLabels[route]}
         </span>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <MarketStatusBar />
         <AutoRefreshIndicator />
         <BeginnerModeToggle />
       </div>
@@ -319,6 +393,10 @@ function PageContent({ route }: { route: Route }) {
       return <Portfolio />;
     case "/history":
       return <History />;
+    case "/news":
+      return <News />;
+    case "/settings":
+      return <Settings />;
     default:
       return <Overview />;
   }
@@ -356,6 +434,7 @@ function App() {
   return (
     <BeginnerModeProvider>
       <AppInner />
+      <ChatPanel />
     </BeginnerModeProvider>
   );
 }

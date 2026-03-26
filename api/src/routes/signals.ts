@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@marketpulse/db/client";
-import { signals, strategies } from "@marketpulse/db/schema";
+import { signals, strategies, signalOutcomes } from "@marketpulse/db/schema";
 import { desc, eq, and, gte } from "drizzle-orm";
 
 export const signalsRouter = new Hono();
@@ -63,5 +63,19 @@ signalsRouter.get("/:id", async (c) => {
     .limit(1);
 
   if (!rows[0]) return c.json({ error: "Signal not found" }, 404);
+  return c.json(rows[0]);
+});
+
+// GET /v1/signals/:id/outcome — signal outcome (win/loss/neutral)
+signalsRouter.get("/:id/outcome", async (c) => {
+  const id = c.req.param("id");
+
+  const rows = await db
+    .select()
+    .from(signalOutcomes)
+    .where(eq(signalOutcomes.signalId, id))
+    .limit(1);
+
+  if (!rows[0]) return c.json({ error: "Outcome not yet recorded" }, 404);
   return c.json(rows[0]);
 });

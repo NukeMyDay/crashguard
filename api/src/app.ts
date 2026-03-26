@@ -11,6 +11,9 @@ import { strategiesRouter } from "./routes/strategies.js";
 import { scannerRouter } from "./routes/scanner.js";
 import { portfolioRouter } from "./routes/portfolio.js";
 import { briefingsRouter } from "./routes/briefings.js";
+import { newsRouter } from "./routes/news.js";
+import { chatRouter } from "./routes/chat.js";
+import { settingsRouter } from "./routes/settings.js";
 
 export const app = new Hono();
 
@@ -30,5 +33,8 @@ app.route("/v1/scanner", scannerRouter);
 app.route("/v1/portfolio", portfolioRouter);
 app.route("/v1/briefings", briefingsRouter);
 app.route("/v1/briefing", briefingsRouter);
+app.route("/v1/news", newsRouter);
+app.route("/v1/chat", chatRouter);
+app.route("/v1/settings", settingsRouter);
 
 export default app;

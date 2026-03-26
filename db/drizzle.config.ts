@@ -1,7 +1,7 @@
 import type { Config } from "drizzle-kit";
 
 export default {
-  schema: ["./src/schema/indicators.ts", "./src/schema/scores.ts", "./src/schema/trading.ts"],
+  schema: ["./src/schema/indicators.ts", "./src/schema/scores.ts", "./src/schema/trading.ts", "./src/schema/settings.ts"],
   out: "./migrations",
   dialect: "postgresql",
   dbCredentials: {
