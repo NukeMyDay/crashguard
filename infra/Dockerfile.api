@@ -1,0 +1,19 @@
+FROM node:20-alpine AS base
+RUN npm install -g pnpm
+
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml ./
+COPY shared/package.json ./shared/
+COPY db/package.json ./db/
+COPY api/package.json ./api/
+
+RUN pnpm install --frozen-lockfile
+
+COPY shared/ ./shared/
+COPY db/ ./db/
+COPY api/ ./api/
+
+RUN pnpm --filter @marketpulse/api build
+
+EXPOSE 3000
+CMD ["node", "api/dist/index.js"]

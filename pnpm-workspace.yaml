@@ -1,0 +1,6 @@
+packages:
+  - "api"
+  - "dashboard"
+  - "pipelines"
+  - "db"
+  - "shared"

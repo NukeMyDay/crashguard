@@ -1,0 +1,25 @@
+{
+  "name": "marketpulse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time market health monitoring and crash probability dashboard",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter api dev & pnpm --filter dashboard dev",
+    "build": "pnpm --filter './packages/**' build && pnpm --filter api build && pnpm --filter dashboard build",
+    "db:generate": "pnpm --filter db generate",
+    "db:migrate": "pnpm --filter db migrate",
+    "db:seed": "pnpm --filter @marketpulse/db tsx src/seed.ts",
+    "db:backtest": "pnpm --filter @marketpulse/db tsx src/backtest-seed.ts",
+    "db:seed-strategies": "pnpm --filter @marketpulse/db exec tsx src/seed-strategies.ts",
+    "docker:up": "docker compose -f infra/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "workspaces": [
+    "api",
+    "dashboard",
+    "pipelines",
+    "db",
+    "shared"
+  ]
+}
