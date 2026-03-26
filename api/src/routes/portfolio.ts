@@ -12,6 +12,31 @@ import { db } from "@marketpulse/db/client";
 import { portfolios, trades, signals } from "@marketpulse/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
+// ─── Stress Test Config ────────────────────────────────────────────────────────
+
+type ScenarioKey = "crash_20" | "crash_40" | "2008" | "2020" | "2022" | "custom";
+
+interface AssetMultipliers { equities: number; bonds: number; gold: number; cash: number }
+
+const SCENARIOS: Record<Exclude<ScenarioKey, "custom">, AssetMultipliers> = {
+  crash_20: { equities: -0.20, bonds: +0.05, gold: +0.08, cash: 0 },
+  crash_40: { equities: -0.40, bonds: +0.10, gold: +0.15, cash: 0 },
+  "2008":   { equities: -0.55, bonds: +0.12, gold: +0.05, cash: 0 },
+  "2020":   { equities: -0.34, bonds: +0.08, gold: +0.05, cash: 0 },
+  "2022":   { equities: -0.25, bonds: -0.15, gold: -0.02, cash: 0 },
+};
+
+const BOND_TICKERS = new Set(["TLT", "BND", "AGG", "IEF", "SHY"]);
+const GOLD_TICKERS = new Set(["GLD", "IAU"]);
+const CASH_TICKERS = new Set(["SHV", "BIL", "SGOV"]);
+
+function classifyAsset(ticker: string): keyof AssetMultipliers {
+  if (BOND_TICKERS.has(ticker)) return "bonds";
+  if (GOLD_TICKERS.has(ticker)) return "gold";
+  if (CASH_TICKERS.has(ticker)) return "cash";
+  return "equities";
+}
+
 export const portfolioRouter = new Hono();
 
 const INITIAL_CAPITAL = 100000;
@@ -348,4 +373,110 @@ portfolioRouter.get("/performance", async (c) => {
   });
 
   return c.json(chartData);
+});
+
+// ─── POST /v1/portfolio/stress-test ───────────────────────────────────────────
+
+portfolioRouter.post("/stress-test", async (c) => {
+  const body = await c.req.json() as {
+    scenario: ScenarioKey;
+    customDrop?: number;
+  };
+
+  const { scenario } = body;
+  const validScenarios: ScenarioKey[] = ["crash_20", "crash_40", "2008", "2020", "2022", "custom"];
+  if (!scenario || !validScenarios.includes(scenario)) {
+    return c.json({ error: `scenario must be one of: ${validScenarios.join(", ")}` }, 400);
+  }
+
+  if (scenario === "custom" && (body.customDrop == null || body.customDrop >= 0)) {
+    return c.json({ error: "customDrop must be a negative number (e.g. -15)" }, 400);
+  }
+
+  let multipliers: AssetMultipliers;
+  if (scenario === "custom") {
+    const drop = body.customDrop! / 100;
+    multipliers = { equities: drop, bonds: Math.abs(drop) * 0.2, gold: Math.abs(drop) * 0.1, cash: 0 };
+  } else {
+    multipliers = SCENARIOS[scenario];
+  }
+
+  const portfolio = await getOrCreateDefaultPortfolio();
+
+  // Load open positions
+  const openTrades = await db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.portfolioId, portfolio.id), eq(trades.status, "open")));
+
+  // Group into holdings by symbol
+  const grouped = new Map<string, { direction: string; totalQty: number; totalCost: number }>();
+  for (const t of openTrades) {
+    const key = t.symbol;
+    const qty = Number(t.quantity);
+    const price = Number(t.entryPrice);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.totalQty += qty;
+      existing.totalCost += qty * price;
+    } else {
+      grouped.set(key, { direction: t.direction, totalQty: qty, totalCost: qty * price });
+    }
+  }
+
+  let totalValueBefore = 0;
+  let totalValueAfter = 0;
+
+  const positions: Array<{
+    ticker: string;
+    quantity: number;
+    currentValue: number;
+    stressedValue: number;
+    loss: number;
+    lossPct: number;
+  }> = [];
+
+  for (const [ticker, pos] of grouped.entries()) {
+    const avgPrice = pos.totalCost / pos.totalQty;
+    const currentPrice = (await fetchCurrentPrice(ticker)) ?? avgPrice;
+    const currentValue = currentPrice * pos.totalQty;
+
+    const assetClass = classifyAsset(ticker);
+    const change = multipliers[assetClass];
+    const stressedPrice = currentPrice * (1 + change);
+    const stressedValue = stressedPrice * pos.totalQty;
+    const loss = stressedValue - currentValue;
+    const lossPct = (loss / currentValue) * 100;
+
+    totalValueBefore += currentValue;
+    totalValueAfter += stressedValue;
+
+    positions.push({
+      ticker,
+      quantity: pos.totalQty,
+      currentValue: Math.round(currentValue * 100) / 100,
+      stressedValue: Math.round(stressedValue * 100) / 100,
+      loss: Math.round(loss * 100) / 100,
+      lossPct: Math.round(lossPct * 100) / 100,
+    });
+  }
+
+  const totalLoss = totalValueAfter - totalValueBefore;
+  const totalLossPct = totalValueBefore > 0 ? (totalLoss / totalValueBefore) * 100 : 0;
+
+  // Identify worst position (biggest loss) and best hedge (biggest gain)
+  const sorted = [...positions].sort((a, b) => a.loss - b.loss);
+  const worstPosition = sorted[0]?.ticker ?? null;
+  const bestHedge = sorted.findLast((p) => p.loss > 0)?.ticker ?? null;
+
+  return c.json({
+    scenario,
+    totalValueBefore: Math.round(totalValueBefore * 100) / 100,
+    totalValueAfter: Math.round(totalValueAfter * 100) / 100,
+    totalLoss: Math.round(totalLoss * 100) / 100,
+    totalLossPct: Math.round(totalLossPct * 100) / 100,
+    positions,
+    worstPosition,
+    bestHedge,
+  });
 });

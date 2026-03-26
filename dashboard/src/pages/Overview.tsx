@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
-import { getDashboard, getRegime, getBriefingToday, getScoreHistory, getSignals, getNews, getStrategyPerformance } from "../api.js";
+import { getDashboard, getRegime, getBriefingToday, getScoreHistory, getSignals, getNews, getStrategyPerformance, fetchJSON } from "../api.js";
 import { CrashScoreGauge } from "../components/CrashScoreGauge.js";
 import { MarketGrid } from "../components/MarketGrid.js";
 import { AlertsList } from "../components/AlertsList.js";
 import { ScoreHistoryChart } from "../components/ScoreHistoryChart.js";
 import { IndicatorTable } from "../components/IndicatorTable.js";
+import { AttributionPanel } from "../components/AttributionPanel.js";
+import { CorrelationHeatmap } from "../components/CorrelationHeatmap.js";
 import {
   C,
   Card,
@@ -15,11 +17,133 @@ import {
   SkeletonLine,
   Badge,
   REGIME_COLORS,
-  useBeginnerMode,
+  useExpertise,
+  getScoreColor,
+  getScoreLabel,
 } from "../context.js";
 
+// ---------------------------------------------------------------------------
+// Social Sentiment Widget (WSB)
+// ---------------------------------------------------------------------------
+
+interface WsbTicker {
+  ticker: string;
+  mentions: number;
+  sentiment: "bullish" | "bearish" | "neutral";
+  score?: number;
+}
+
+function SocialSentimentWidget() {
+  const [tickers, setTickers] = useState<WsbTicker[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const data = await fetchJSON<any>("/social/wsb");
+        if (!cancelled) {
+          const items: WsbTicker[] = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.tickers)
+            ? data.tickers
+            : [];
+          setTickers(items.slice(0, 5));
+          setUnavailable(items.length === 0);
+        }
+      } catch {
+        if (!cancelled) setUnavailable(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    const interval = setInterval(load, 30 * 60_000); // refresh every 30 min
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const sentimentColor = (s: string) =>
+    s === "bullish" ? C.green : s === "bearish" ? C.red : C.amber;
+
+  return (
+    <Card style={{ padding: "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <span style={{ color: C.textSecondary, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          🐸 Retail Sentiment (r/WallStreetBets)
+        </span>
+        <span style={{ color: C.textMuted, fontSize: 10 }}>30m refresh</span>
+      </div>
+
+      {loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[1, 2, 3].map((i) => (
+            <div key={i} style={{ height: 28, background: "#1e293b", borderRadius: 6, opacity: 0.5 }} />
+          ))}
+        </div>
+      )}
+
+      {!loading && unavailable && (
+        <div style={{ color: C.textMuted, fontSize: 12, padding: "8px 0" }}>
+          WSB sentiment feed unavailable
+        </div>
+      )}
+
+      {!loading && !unavailable && tickers.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {tickers.map((t, i) => {
+            const sColor = sentimentColor(t.sentiment);
+            return (
+              <div
+                key={t.ticker}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "6px 0",
+                  borderBottom: i < tickers.length - 1 ? `1px solid ${C.border}` : "none",
+                }}
+              >
+                <span style={{ color: C.textMuted, fontSize: 11, width: 16, textAlign: "right", flexShrink: 0 }}>
+                  {i + 1}
+                </span>
+                <span style={{ color: C.textPrimary, fontWeight: 700, fontFamily: "monospace", fontSize: 13, flex: 1 }}>
+                  {t.ticker}
+                </span>
+                {t.mentions != null && (
+                  <span style={{ color: C.textMuted, fontSize: 11 }}>{t.mentions} mentions</span>
+                )}
+                <span
+                  style={{
+                    color: sColor,
+                    background: `${sColor}18`,
+                    border: `1px solid ${sColor}44`,
+                    padding: "1px 8px",
+                    borderRadius: 3,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: "capitalize",
+                    flexShrink: 0,
+                  }}
+                >
+                  {t.sentiment}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function BriefingSection({ briefing }: { briefing: any }) {
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner, isProfessional } = useExpertise();
   const opportunities = briefing?.opportunities ?? briefing?.topOpportunities ?? [];
   const risks = briefing?.risks ?? briefing?.topRisks ?? [];
 
@@ -123,7 +247,7 @@ function BriefingSection({ briefing }: { briefing: any }) {
         </div>
       </div>
 
-      {beginnerMode && (
+      {isBeginner && (
         <div
           style={{
             marginTop: 16,
@@ -144,7 +268,7 @@ function BriefingSection({ briefing }: { briefing: any }) {
 }
 
 function HistoricalAnalogSection({ analog }: { analog: any }) {
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner, isProfessional } = useExpertise();
   if (!analog) return null;
 
   const label =
@@ -177,7 +301,7 @@ function HistoricalAnalogSection({ analog }: { analog: any }) {
           )}
         </div>
       </div>
-      {beginnerMode && (
+      {isBeginner && (
         <div
           style={{
             marginTop: 14,
@@ -197,8 +321,118 @@ function HistoricalAnalogSection({ analog }: { analog: any }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Beginner: Plain-English Market Summary card
+// ---------------------------------------------------------------------------
+function BeginnerSummaryCard({ score }: { score: number }) {
+  let headline: string;
+  let detail: string;
+  let tone: "positive" | "neutral" | "negative";
+
+  if (score < 25) {
+    headline = "Markets are calm";
+    detail = `Current crash score of ${Math.round(score)} indicates low risk. Volatility is contained and conditions look stable. Good time for steady, long-term investments.`;
+    tone = "positive";
+  } else if (score < 50) {
+    headline = "Markets are cautious";
+    detail = `Current crash score of ${Math.round(score)} suggests moderate risk. Some warning signs are present. Consider reviewing your portfolio for balance.`;
+    tone = "neutral";
+  } else if (score < 75) {
+    headline = "Markets are elevated risk";
+    detail = `Current crash score of ${Math.round(score)} is elevated. Multiple indicators are showing stress. Reducing exposure to risky assets may be prudent.`;
+    tone = "negative";
+  } else {
+    headline = "Markets are in danger zone";
+    detail = `Current crash score of ${Math.round(score)} is in the critical range. Historically, scores above 75 have preceded major corrections. Exercise caution.`;
+    tone = "negative";
+  }
+
+  const bgColor = tone === "positive" ? `${C.green}0d` : tone === "negative" ? `${C.red}0d` : `${C.amber}0d`;
+  const borderColor = tone === "positive" ? `${C.green}33` : tone === "negative" ? `${C.red}33` : `${C.amber}33`;
+  const headlineColor = tone === "positive" ? C.green : tone === "negative" ? C.red : C.amber;
+
+  return (
+    <Card style={{ marginBottom: 24, background: bgColor, borderColor }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+        <span style={{ fontSize: 24 }}>{tone === "positive" ? "✅" : tone === "negative" ? "⚠️" : "📊"}</span>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: headlineColor, marginBottom: 6 }}>
+            {headline}
+          </div>
+          <div style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.6 }}>
+            {detail}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted }}>
+            Market Summary in Plain English · Switch to Intermediate or Professional for detailed data
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Professional: Dense mini-dashboard grid
+// ---------------------------------------------------------------------------
+function ProDenseGrid({ scores, indicators }: { scores: any[]; indicators: any[] }) {
+  const topIndicators = [...indicators]
+    .filter((i) => i.latestValue)
+    .sort((a, b) => {
+      const av = Number(a.latestValue?.normalizedValue ?? 0) * Number(a.weight ?? 0);
+      const bv = Number(b.latestValue?.normalizedValue ?? 0) * Number(b.weight ?? 0);
+      return bv - av;
+    })
+    .slice(0, 5);
+
+  return (
+    <div
+      style={{
+        background: "#080c13",
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 20,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 16,
+        alignItems: "center",
+      }}
+    >
+      {scores.map((s: any) => {
+        const sc = Number(s.crashScore);
+        const col = getScoreColor(sc);
+        return (
+          <div key={s.market} style={{ textAlign: "center", minWidth: 52 }}>
+            <div style={{ color: C.textMuted, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.market}</div>
+            <div style={{ color: col, fontSize: 18, fontWeight: 800, fontFamily: "monospace", fontVariantNumeric: "tabular-nums" }}>{sc.toFixed(1)}</div>
+            <div style={{ color: C.textMuted, fontSize: 9 }}>{getScoreLabel(sc)}</div>
+          </div>
+        );
+      })}
+      <div style={{ width: 1, height: 40, background: C.border, flexShrink: 0 }} />
+      {topIndicators.map((ind: any) => {
+        const norm = Number(ind.latestValue?.normalizedValue ?? 0);
+        const raw = Number(ind.latestValue?.value ?? 0);
+        const col = getScoreColor(norm);
+        return (
+          <div key={ind.slug} style={{ minWidth: 72 }}>
+            <div style={{ color: C.textMuted, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{ind.name.slice(0, 12)}</div>
+            <div style={{ color: C.textPrimary, fontSize: 12, fontFamily: "monospace", fontVariantNumeric: "tabular-nums" }}>{raw.toFixed(2)}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+              <div style={{ flex: 1, height: 3, background: "#1e293b", borderRadius: 2 }}>
+                <div style={{ width: `${Math.min(100, norm)}%`, height: "100%", background: col, borderRadius: 2 }} />
+              </div>
+              <span style={{ color: col, fontSize: 9, fontFamily: "monospace" }}>{norm.toFixed(0)}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Overview() {
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner, isProfessional } = useExpertise();
   const [dashboard, setDashboard] = useState<any>(null);
   const [regime, setRegime] = useState<any>(null);
   const [briefing, setBriefing] = useState<any>(null);
@@ -316,6 +550,16 @@ export function Overview() {
 
       {dashboard && (
         <>
+          {/* Beginner: Plain-English Market Summary */}
+          {isBeginner && globalScore && (
+            <BeginnerSummaryCard score={Number(globalScore.crashScore)} />
+          )}
+
+          {/* Professional: Dense mini-dashboard */}
+          {isProfessional && (
+            <ProDenseGrid scores={dashboard.scores ?? []} indicators={indicators} />
+          )}
+
           {/* Global Crash Score — HERO */}
           {globalScore && (
             <div style={{ marginBottom: 32 }}>
@@ -391,7 +635,7 @@ export function Overview() {
                       )}
                     </div>
                   )}
-                  {beginnerMode && (
+                  {isBeginner && (
                     <div
                       style={{
                         marginTop: 16,
@@ -535,6 +779,30 @@ export function Overview() {
                 </div>
               )}
             </Card>
+          </div>
+
+          {/* Performance Attribution + Social Sentiment */}
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24, marginBottom: 32 }}>
+            <div>
+              <SectionTitle info="Which indicators are contributing most to today's crash score.">
+                Performance Attribution
+              </SectionTitle>
+              <AttributionPanel />
+            </div>
+            <div>
+              <SectionTitle info="Top tickers mentioned on r/WallStreetBets today with retail sentiment.">
+                Social Sentiment
+              </SectionTitle>
+              <SocialSentimentWidget />
+            </div>
+          </div>
+
+          {/* Correlation Heatmap */}
+          <div style={{ marginBottom: 32 }}>
+            <SectionTitle info="Pearson correlation between key indicators over the last 30 days. Hover a cell to see the relationship explained.">
+              Indicator Correlations
+            </SectionTitle>
+            <CorrelationHeatmap />
           </div>
 
           {/* Today's Briefing */}

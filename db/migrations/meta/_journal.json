@@ -36,6 +36,34 @@
       "when": 1774529937862,
       "tag": "0004_lively_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1774533380616,
+      "tag": "0005_salty_albert_cleary",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1774537765536,
+      "tag": "0006_unusual_marvex",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1774541416380,
+      "tag": "0007_marvelous_silver_fox",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774545086264,
+      "tag": "0008_gorgeous_silver_fox",
+      "breakpoints": true
     }
   ]
 }

@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
-import { getSignals } from "../api.js";
+import { getSignals, getAlerts } from "../api.js";
 import {
   C,
+  Card,
   EmptyState,
   ErrorBanner,
   SkeletonBlock,
   Badge,
-  useBeginnerMode,
+  useExpertise,
+  TH,
+  TD,
+  InfoIcon,
 } from "../context.js";
 
 interface Signal {
@@ -121,7 +125,7 @@ function StatusDot({ status }: { status?: string }) {
 
 function SignalCard({ signal }: { signal: Signal }) {
   const [expanded, setExpanded] = useState(false);
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner, isProfessional } = useExpertise();
   const direction = getDirectionLabel(signal.action ?? "");
   const entry = signal.entry ?? signal.entryPrice;
   const generated = signal.createdAt ?? signal.generatedAt;
@@ -340,7 +344,7 @@ function SignalCard({ signal }: { signal: Signal }) {
             </div>
           )}
 
-          {beginnerMode && (
+          {isBeginner && (
             <div
               style={{
                 padding: "10px 14px",
@@ -392,8 +396,333 @@ function filterAndSortSignals(
   return result;
 }
 
+// Professional mode: sortable table view of signals
+function ProSignalsTable({ signals }: { signals: Signal[] }) {
+  const [sortCol, setSortCol] = useState<"confidence" | "instrument" | "action" | "rrRatio" | "expiry">("confidence");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  function handleSort(col: typeof sortCol) {
+    if (sortCol === col) setSortAsc((v) => !v);
+    else { setSortCol(col); setSortAsc(false); }
+  }
+
+  const sorted = [...signals].sort((a, b) => {
+    let av: any, bv: any;
+    if (sortCol === "confidence") { av = a.confidence ?? a.strength ?? 0; bv = b.confidence ?? b.strength ?? 0; }
+    else if (sortCol === "instrument") { av = a.instrument ?? ""; bv = b.instrument ?? ""; }
+    else if (sortCol === "action") { av = a.action ?? ""; bv = b.action ?? ""; }
+    else if (sortCol === "rrRatio") { av = a.rrRatio ?? 0; bv = b.rrRatio ?? 0; }
+    else { av = new Date(a.expiresAt ?? 0).getTime(); bv = new Date(b.expiresAt ?? 0).getTime(); }
+    if (av < bv) return sortAsc ? -1 : 1;
+    if (av > bv) return sortAsc ? 1 : -1;
+    return 0;
+  });
+
+  function SortTH({ col, children }: { col: typeof sortCol; children: React.ReactNode }) {
+    const active = sortCol === col;
+    return (
+      <th style={{ ...TH, cursor: "pointer", userSelect: "none", padding: "7px 10px", fontSize: 10 }} onClick={() => handleSort(col)}>
+        <span style={{ color: active ? C.blue : undefined }}>{children}</span>
+        {active && <span style={{ marginLeft: 3, color: C.blue }}>{sortAsc ? "↑" : "↓"}</span>}
+      </th>
+    );
+  }
+
+  const compactTD: React.CSSProperties = { ...TD, padding: "6px 10px", fontSize: 12 };
+
+  return (
+    <div style={{ background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <SortTH col="instrument">Ticker</SortTH>
+              <SortTH col="action">Dir.</SortTH>
+              <th style={{ ...TH, padding: "7px 10px", fontSize: 10 }}>Entry</th>
+              <th style={{ ...TH, padding: "7px 10px", fontSize: 10 }}>Stop</th>
+              <th style={{ ...TH, padding: "7px 10px", fontSize: 10 }}>Target</th>
+              <SortTH col="rrRatio">R/R</SortTH>
+              <SortTH col="confidence">Conf.</SortTH>
+              <SortTH col="expiry">Expires</SortTH>
+              <th style={{ ...TH, padding: "7px 10px", fontSize: 10 }}>Strategy</th>
+              <th style={{ ...TH, padding: "7px 10px", fontSize: 10 }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((sig) => {
+              const dir = getDirectionLabel(sig.action ?? "");
+              const entry = sig.entry ?? sig.entryPrice;
+              const conf = sig.confidence ?? sig.strength ?? 0;
+              const expiry = getExpiry(sig.expiresAt);
+              const confColor = conf >= 75 ? C.green : conf >= 50 ? C.amber : C.red;
+              const isExpired = sig.status?.toLowerCase() === "expired";
+              return (
+                <tr key={sig.id} style={{ opacity: isExpired ? 0.5 : 1 }}>
+                  <td style={{ ...compactTD, color: C.textPrimary, fontWeight: 700, fontFamily: "monospace" }}>{sig.instrument ?? "—"}</td>
+                  <td style={compactTD}>
+                    <span style={{ color: dir.color, background: `${dir.color}1a`, border: `1px solid ${dir.color}44`, padding: "1px 6px", borderRadius: 3, fontSize: 10, fontWeight: 800 }}>
+                      {dir.label}
+                    </span>
+                  </td>
+                  <td style={{ ...compactTD, fontFamily: "monospace" }}>{entry != null ? `$${Number(entry).toFixed(2)}` : "—"}</td>
+                  <td style={{ ...compactTD, color: C.red, fontFamily: "monospace" }}>{sig.stopLoss != null ? `$${Number(sig.stopLoss).toFixed(2)}` : "—"}</td>
+                  <td style={{ ...compactTD, color: C.green, fontFamily: "monospace" }}>{sig.target != null ? `$${Number(sig.target).toFixed(2)}` : "—"}</td>
+                  <td style={{ ...compactTD, color: "#6366f1", fontFamily: "monospace", fontWeight: 700 }}>{sig.rrRatio != null ? `${Number(sig.rrRatio).toFixed(2)}:1` : "—"}</td>
+                  <td style={{ ...compactTD, color: confColor, fontFamily: "monospace", fontWeight: 700 }}>{conf.toFixed(1)}</td>
+                  <td style={{ ...compactTD, color: expiry.color, fontFamily: "monospace" }}>{expiry.label}</td>
+                  <td style={{ ...compactTD, color: C.textMuted, fontSize: 11 }}>{sig.strategyType ?? sig.strategy ?? "—"}</td>
+                  <td style={{ ...compactTD, color: C.textMuted, fontSize: 11, textTransform: "capitalize" }}>{sig.status ?? "active"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Alert History
+// ---------------------------------------------------------------------------
+type AlertMarketFilter = "all" | "global" | "us" | "eu" | "asia";
+type AlertSeverityFilter = "all" | "warning" | "critical" | "extreme";
+
+function AlertHistory() {
+  const { isBeginner } = useExpertise();
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [marketFilter, setMarketFilter] = useState<AlertMarketFilter>("all");
+  const [severityFilter, setSeverityFilter] = useState<AlertSeverityFilter>("all");
+
+  async function load() {
+    try {
+      const data = await getAlerts();
+      setAlerts(Array.isArray(data) ? data : []);
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function acknowledge(id: string) {
+    try {
+      await fetch(`/v1/alerts/${id}/acknowledge`, { method: "PATCH" });
+      setAlerts((prev) => prev.map((a) => a.id === id ? { ...a, acknowledgedAt: new Date().toISOString() } : a));
+    } catch {
+      // best-effort
+    }
+  }
+
+  const filtered = alerts.filter((a) => {
+    if (marketFilter !== "all" && a.market !== marketFilter) return false;
+    if (severityFilter !== "all" && (a.severity ?? "").toLowerCase() !== severityFilter) return false;
+    return true;
+  });
+
+  const severityColor = (sev: string) => {
+    const s = sev?.toLowerCase();
+    if (s === "extreme") return "#7f1d1d";
+    if (s === "critical") return C.red;
+    return C.amber;
+  };
+
+  const severityBg = (sev: string) => {
+    const s = sev?.toLowerCase();
+    if (s === "extreme") return "#7f1d1d33";
+    if (s === "critical") return `${C.red}18`;
+    return `${C.amber}18`;
+  };
+
+  function formatTime(ts: string) {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    const diff = Date.now() - d.getTime();
+    const mins = Math.floor(diff / 60_000);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  const MARKET_OPTS: AlertMarketFilter[] = ["all", "global", "us", "eu", "asia"];
+  const SEV_OPTS: AlertSeverityFilter[] = ["all", "warning", "critical", "extreme"];
+
+  return (
+    <div style={{ marginTop: 36 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 600, color: C.textSecondary, margin: 0 }}>Alert History</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* Market filter */}
+          <div style={{ display: "flex", gap: 3, background: "#0d1424", borderRadius: 8, padding: 2, border: `1px solid ${C.border}` }}>
+            {MARKET_OPTS.map((m) => (
+              <button
+                key={m}
+                onClick={() => setMarketFilter(m)}
+                style={{
+                  padding: "3px 10px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: marketFilter === m ? C.blue : "transparent",
+                  color: marketFilter === m ? "#fff" : C.textMuted,
+                  fontSize: 11,
+                  fontWeight: marketFilter === m ? 600 : 400,
+                  cursor: "pointer",
+                  textTransform: "capitalize",
+                }}
+              >
+                {m === "all" ? "All Markets" : m.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          {/* Severity filter */}
+          <div style={{ display: "flex", gap: 3, background: "#0d1424", borderRadius: 8, padding: 2, border: `1px solid ${C.border}` }}>
+            {SEV_OPTS.map((s) => {
+              const color = s === "all" ? C.textMuted : severityColor(s);
+              const isAct = severityFilter === s;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setSeverityFilter(s)}
+                  style={{
+                    padding: "3px 10px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: isAct ? (s === "all" ? C.blue : color) : "transparent",
+                    color: isAct ? "#fff" : s === "all" ? C.textMuted : color,
+                    fontSize: 11,
+                    fontWeight: isAct ? 600 : 400,
+                    cursor: "pointer",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[0, 1, 2].map((i) => <SkeletonBlock key={i} height={72} />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon="🔔" title="No alerts in this period" subtitle="Alerts appear when crash scores cross Warning (75) or Critical (90) thresholds." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map((alert) => {
+            const sev = alert.severity ?? "warning";
+            const color = severityColor(sev);
+            const bg = severityBg(sev);
+            const isExtreme = sev.toLowerCase() === "extreme";
+            const isAcked = !!alert.acknowledgedAt;
+            return (
+              <Card
+                key={alert.id}
+                style={{
+                  padding: "12px 16px",
+                  borderLeft: `3px solid ${color}`,
+                  background: bg,
+                  opacity: isAcked ? 0.6 : 1,
+                  position: "relative",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                  {/* Severity badge */}
+                  <span
+                    style={{
+                      color,
+                      background: `${color}22`,
+                      border: `1px solid ${color}55`,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      fontSize: 10,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      flexShrink: 0,
+                      animation: isExtreme && !isAcked ? "pulse 2s infinite" : undefined,
+                    }}
+                  >
+                    {sev}
+                  </span>
+
+                  {/* Market */}
+                  <span style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", flexShrink: 0 }}>
+                    {alert.market ?? "—"}
+                  </span>
+
+                  {/* Message */}
+                  <div style={{ flex: 1, color: C.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
+                    {alert.message ?? "Alert triggered"}
+                  </div>
+
+                  {/* Score */}
+                  {alert.crashScore != null && (
+                    <span style={{ color, fontFamily: "monospace", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                      {Number(alert.crashScore).toFixed(1)}
+                    </span>
+                  )}
+
+                  {/* Time */}
+                  <span style={{ color: C.textMuted, fontSize: 11, flexShrink: 0 }}>
+                    {formatTime(alert.triggeredAt ?? alert.createdAt)}
+                  </span>
+
+                  {/* Acknowledge */}
+                  {!isAcked && (
+                    <button
+                      onClick={() => acknowledge(alert.id)}
+                      style={{
+                        padding: "3px 10px",
+                        borderRadius: 5,
+                        border: `1px solid ${C.border}`,
+                        background: "transparent",
+                        color: C.textMuted,
+                        fontSize: 11,
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Ack
+                    </button>
+                  )}
+                  {isAcked && (
+                    <span style={{ color: C.textMuted, fontSize: 10, flexShrink: 0 }}>✓ acked</span>
+                  )}
+                </div>
+
+                {isBeginner && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted }}>
+                    {sev === "warning" && "⚠ Warning: Crash score crossed 75. Monitor positions."}
+                    {sev === "critical" && "🚨 Critical: Crash score crossed 90. High risk of drawdown."}
+                    {sev === "extreme" && "‼️ Extreme: Market in extreme stress. Consider defensive positioning."}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <p style={{ color: "#1e293b", fontSize: 12, marginTop: 10 }}>
+        {filtered.length} of {alerts.length} alert{alerts.length !== 1 ? "s" : ""}
+      </p>
+    </div>
+  );
+}
+
 export function Signals() {
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner, isProfessional } = useExpertise();
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -558,7 +887,7 @@ export function Signals() {
         </div>
       </div>
 
-      {beginnerMode && (
+      {isBeginner && (
         <div
           style={{
             padding: "10px 14px",
@@ -584,6 +913,8 @@ export function Signals() {
           title="No signals match filters"
           subtitle="Try adjusting direction, strategy type, or minimum confidence."
         />
+      ) : isProfessional ? (
+        <ProSignalsTable signals={filtered} />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {filtered.map((sig) => (
@@ -595,6 +926,8 @@ export function Signals() {
       <p style={{ color: "#1e293b", fontSize: 12, marginTop: 14 }}>
         {filtered.length} of {signals.length} signal{signals.length !== 1 ? "s" : ""}
       </p>
+
+      <AlertHistory />
     </div>
   );
 }

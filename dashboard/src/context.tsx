@@ -18,47 +18,71 @@ export const C = {
 };
 
 // ---------------------------------------------------------------------------
-// Beginner Mode context
+// Expertise Level context  (replaces binary BeginnerMode)
 // ---------------------------------------------------------------------------
-interface BeginnerModeCtx {
-  beginnerMode: boolean;
-  toggleBeginnerMode: () => void;
+export type ExpertiseLevel = "beginner" | "intermediate" | "professional";
+
+interface ExpertiseCtx {
+  level: ExpertiseLevel;
+  setLevel: (l: ExpertiseLevel) => void;
+  isBeginner: boolean;
+  isProfessional: boolean;
 }
 
-const BeginnerModeContext = createContext<BeginnerModeCtx>({
-  beginnerMode: false,
-  toggleBeginnerMode: () => {},
+const ExpertiseContext = createContext<ExpertiseCtx>({
+  level: "intermediate",
+  setLevel: () => {},
+  isBeginner: false,
+  isProfessional: false,
 });
 
-export function BeginnerModeProvider({ children }: { children: ReactNode }) {
-  const [beginnerMode, setBeginnerMode] = useState(() => {
+export function ExpertiseLevelProvider({ children }: { children: ReactNode }) {
+  const [level, setLevelState] = useState<ExpertiseLevel>(() => {
     try {
-      return localStorage.getItem("mp_beginner") === "true";
-    } catch {
-      return false;
-    }
+      // Migrate from old binary key
+      const old = localStorage.getItem("mp_beginner");
+      if (old === "true") {
+        localStorage.removeItem("mp_beginner");
+        localStorage.setItem("mp_expertise_level", "beginner");
+        return "beginner";
+      }
+      const stored = localStorage.getItem("mp_expertise_level") as ExpertiseLevel | null;
+      if (stored === "beginner" || stored === "intermediate" || stored === "professional") {
+        return stored;
+      }
+    } catch {}
+    return "intermediate";
   });
 
-  function toggleBeginnerMode() {
-    setBeginnerMode((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem("mp_beginner", String(next));
-      } catch {}
-      return next;
-    });
+  function setLevel(l: ExpertiseLevel) {
+    setLevelState(l);
+    try {
+      localStorage.setItem("mp_expertise_level", l);
+    } catch {}
   }
 
   return (
-    <BeginnerModeContext.Provider value={{ beginnerMode, toggleBeginnerMode }}>
+    <ExpertiseContext.Provider value={{ level, setLevel, isBeginner: level === "beginner", isProfessional: level === "professional" }}>
       {children}
-    </BeginnerModeContext.Provider>
+    </ExpertiseContext.Provider>
   );
 }
 
-export function useBeginnerMode() {
-  return useContext(BeginnerModeContext);
+export function useExpertise() {
+  return useContext(ExpertiseContext);
 }
+
+// Backward-compat shim for components still using useBeginnerMode
+export function useBeginnerMode() {
+  const { isBeginner, setLevel } = useExpertise();
+  return {
+    beginnerMode: isBeginner,
+    toggleBeginnerMode: () => setLevel(isBeginner ? "intermediate" : "beginner"),
+  };
+}
+
+// Keep old provider name as alias so App.tsx still compiles before we patch it
+export const BeginnerModeProvider = ExpertiseLevelProvider;
 
 // ---------------------------------------------------------------------------
 // Auto-refresh context

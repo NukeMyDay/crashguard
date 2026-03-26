@@ -6,19 +6,21 @@ import { Strategies } from "./pages/Strategies.js";
 import { Portfolio } from "./pages/Portfolio.js";
 import { History } from "./pages/History.js";
 import { News } from "./pages/News.js";
+import { Watchlist } from "./pages/Watchlist.js";
 import { Settings } from "./pages/Settings.js";
-import { BeginnerModeProvider, useBeginnerMode, C } from "./context.js";
+import { Backtest } from "./pages/Backtest.js";
+import { ExpertiseLevelProvider, useExpertise, C } from "./context.js";
 import { ChatPanel } from "./components/ChatPanel.js";
 
 // ---------------------------------------------------------------------------
 // Hash-based routing
 // ---------------------------------------------------------------------------
 
-type Route = "/" | "/signals" | "/scanner" | "/strategies" | "/portfolio" | "/history" | "/news" | "/settings";
+type Route = "/" | "/signals" | "/scanner" | "/strategies" | "/portfolio" | "/watchlist" | "/history" | "/news" | "/settings" | "/backtest";
 
 function getHashRoute(): Route {
   const hash = window.location.hash.replace(/^#/, "") || "/";
-  const valid: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/history", "/news", "/settings"];
+  const valid: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/settings", "/backtest"];
   return valid.includes(hash as Route) ? (hash as Route) : "/";
 }
 
@@ -37,7 +39,7 @@ function useHashRoute(): [Route, (r: Route) => void] {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const routes: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/history", "/news", "/settings"];
+      const routes: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/settings", "/backtest"];
       const idx = parseInt(e.key) - 1;
       if (idx >= 0 && idx < routes.length) {
         navigate(routes[idx]);
@@ -72,9 +74,11 @@ const NAV_ITEMS: NavItem[] = [
   { route: "/scanner", label: "Scanner", icon: "🔍", shortcut: "3" },
   { route: "/strategies", label: "Strategies", icon: "🎯", shortcut: "4" },
   { route: "/portfolio", label: "Portfolio", icon: "💼", shortcut: "5" },
-  { route: "/history", label: "History", icon: "📅", shortcut: "6" },
-  { route: "/news", label: "News", icon: "📰", shortcut: "7" },
-  { route: "/settings", label: "Settings", icon: "⚙️", shortcut: "8" },
+  { route: "/watchlist", label: "Watchlist", icon: "👁", shortcut: "6" },
+  { route: "/history", label: "History", icon: "📅", shortcut: "7" },
+  { route: "/news", label: "News", icon: "📰", shortcut: "8" },
+  { route: "/backtest", label: "Backtest", icon: "⏱️", shortcut: "9" },
+  { route: "/settings", label: "Settings", icon: "⚙️", shortcut: "0" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -185,33 +189,59 @@ function AutoRefreshIndicator() {
 }
 
 // ---------------------------------------------------------------------------
-// Beginner Mode Toggle
+// Expertise Level Selector (3-way segmented control)
 // ---------------------------------------------------------------------------
 
-function BeginnerModeToggle() {
-  const { beginnerMode, toggleBeginnerMode } = useBeginnerMode();
+const EXPERTISE_OPTIONS = [
+  { value: "beginner" as const, icon: "🎓", label: "Beginner" },
+  { value: "intermediate" as const, icon: "📊", label: "Intermediate" },
+  { value: "professional" as const, icon: "⚡", label: "Professional" },
+];
+
+function ExpertiseLevelSelector() {
+  const { level, setLevel } = useExpertise();
 
   return (
-    <button
-      onClick={toggleBeginnerMode}
+    <div
       style={{
         display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "5px 12px",
+        background: "#0d1424",
+        border: `1px solid ${C.border}`,
         borderRadius: 20,
-        border: `1px solid ${beginnerMode ? C.blue + "88" : C.border}`,
-        background: beginnerMode ? C.blue + "1a" : "transparent",
-        color: beginnerMode ? C.blue : C.textMuted,
-        fontSize: 12,
-        fontWeight: 500,
-        cursor: "pointer",
-        transition: "all 0.15s ease",
+        padding: 2,
+        gap: 2,
       }}
     >
-      <span>🎓</span>
-      <span>Beginner Mode {beginnerMode ? "ON" : "OFF"}</span>
-    </button>
+      {EXPERTISE_OPTIONS.map((opt) => {
+        const isActive = level === opt.value;
+        return (
+          <button
+            key={opt.value}
+            onClick={() => setLevel(opt.value)}
+            title={opt.label}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "4px 10px",
+              borderRadius: 18,
+              border: "none",
+              background: isActive ? C.blue + "33" : "transparent",
+              color: isActive ? C.blue : C.textMuted,
+              fontSize: 11,
+              fontWeight: isActive ? 700 : 400,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span>{opt.icon}</span>
+            {/* Show label on wider screens via inline style trick — always show on lg */}
+            <span className="expertise-label">{opt.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -322,7 +352,7 @@ function Sidebar({ route, navigate }: { route: Route; navigate: (r: Route) => vo
       <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
         <div style={{ color: "#1e293b", fontSize: 11 }}>MarketPulse v1.0</div>
         <div style={{ color: "#131d2e", fontSize: 10, marginTop: 1 }}>
-          Press 1–7 to navigate
+          Press 1–9 to navigate
         </div>
       </div>
     </aside>
@@ -340,8 +370,10 @@ function TopHeader({ route }: { route: Route }) {
     "/scanner": "Market Scanner",
     "/strategies": "Strategies",
     "/portfolio": "Portfolio",
+    "/watchlist": "Watchlist",
     "/history": "Historical Analysis",
     "/news": "News Feed",
+    "/backtest": "Backtesting Engine",
     "/settings": "Settings",
   };
 
@@ -369,7 +401,7 @@ function TopHeader({ route }: { route: Route }) {
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <MarketStatusBar />
         <AutoRefreshIndicator />
-        <BeginnerModeToggle />
+        <ExpertiseLevelSelector />
       </div>
     </div>
   );
@@ -391,10 +423,14 @@ function PageContent({ route }: { route: Route }) {
       return <Strategies />;
     case "/portfolio":
       return <Portfolio />;
+    case "/watchlist":
+      return <Watchlist />;
     case "/history":
       return <History />;
     case "/news":
       return <News />;
+    case "/backtest":
+      return <Backtest />;
     case "/settings":
       return <Settings />;
     default:
@@ -432,10 +468,10 @@ function AppInner() {
 
 function App() {
   return (
-    <BeginnerModeProvider>
+    <ExpertiseLevelProvider>
       <AppInner />
       <ChatPanel />
-    </BeginnerModeProvider>
+    </ExpertiseLevelProvider>
   );
 }
 

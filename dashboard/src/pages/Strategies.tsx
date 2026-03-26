@@ -8,7 +8,7 @@ import {
   ErrorBanner,
   SkeletonBlock,
   Badge,
-  useBeginnerMode,
+  useExpertise,
   TH,
   TD,
 } from "../context.js";
@@ -126,7 +126,7 @@ function ExpandedDescription({
   strategy?: Strategy;
   perf?: StrategyPerf;
 }) {
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner: beginnerMode } = useExpertise();
   const typeKey = (strategy?.type ?? perf?.type ?? "").toUpperCase();
   const begExp = BEGINNER_EXPLANATIONS[typeKey];
   const desc = strategy?.description ?? perf?.description;
@@ -271,7 +271,7 @@ function PerformanceTable({
 }
 
 function StrategyDetail({ strategy, onBack }: { strategy: Strategy; onBack: () => void }) {
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner: beginnerMode } = useExpertise();
   const typeKey = strategy.type?.toUpperCase() ?? "UNKNOWN";
   const typeColor = TYPE_COLORS[typeKey] ?? C.textMuted;
   const begExp = BEGINNER_EXPLANATIONS[typeKey];

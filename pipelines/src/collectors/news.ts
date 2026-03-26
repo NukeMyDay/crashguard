@@ -99,6 +99,20 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+// ─── Sentiment scoring ────────────────────────────────────────────────────────
+
+const BULLISH_WORDS = ["surge", "rally", "gain", "rise", "record", "beat", "upgrade", "buyout", "recovery", "growth"];
+const BEARISH_WORDS = ["crash", "plunge", "fall", "drop", "miss", "downgrade", "recession", "layoff", "bankrupt", "crisis", "fear", "warning", "sell-off"];
+
+export function scoreSentiment(headline: string, summary: string): "bullish" | "bearish" | "neutral" {
+  const text = (headline + " " + summary).toLowerCase();
+  const b = BULLISH_WORDS.filter(w => text.includes(w)).length;
+  const be = BEARISH_WORDS.filter(w => text.includes(w)).length;
+  if (be > b) return "bearish";
+  if (b > be) return "bullish";
+  return "neutral";
+}
+
 // ─── Main collector ───────────────────────────────────────────────────────────
 
 export async function fetchNewsItems(): Promise<void> {
@@ -139,6 +153,8 @@ export async function fetchNewsItems(): Promise<void> {
 
         if (existing) continue;
 
+        const sentiment = scoreSentiment(headline, summary ?? "");
+
         await db
           .insert(newsItems)
           .values({
@@ -146,6 +162,7 @@ export async function fetchNewsItems(): Promise<void> {
             url: item.link,
             source: feed.source,
             summary,
+            sentiment,
             tickers,
             publishedAt,
           })

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, decimal, timestamp, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, varchar, decimal, boolean, timestamp, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
 
 export const marketEnum = pgEnum("market", ["global", "us", "eu", "asia"]);
 export const severityEnum = pgEnum("severity", ["warning", "critical", "extreme"]);
@@ -28,3 +28,27 @@ export const alerts = pgTable("alerts", {
   marketIdx: index("alerts_market_idx").on(table.market),
   triggeredAtIdx: index("alerts_triggered_at_idx").on(table.triggeredAt),
 }));
+
+// ─── macro_events ──────────────────────────────────────────────────────────────
+
+export const macroEvents = pgTable("macro_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventType: varchar("event_type", { length: 50 }).notNull(), // "fomc" | "cpi" | "jobs" | "gdp"
+  eventDate: timestamp("event_date").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  impact: varchar("impact", { length: 20 }).default("high"), // "high" | "medium" | "low"
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  eventDateIdx: index("macro_events_event_date_idx").on(table.eventDate),
+  eventTypeIdx: index("macro_events_event_type_idx").on(table.eventType),
+}));
+
+// ─── alert_webhooks ────────────────────────────────────────────────────────────
+
+export const alertWebhooks = pgTable("alert_webhooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  url: text("url").notNull(),
+  minSeverity: severityEnum("min_severity").notNull().default("warning"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

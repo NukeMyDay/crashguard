@@ -7,7 +7,7 @@ import {
   EmptyState,
   ErrorBanner,
   SkeletonBlock,
-  useBeginnerMode,
+  useExpertise,
   TH,
   TD,
 } from "../context.js";
@@ -340,7 +340,7 @@ function sortData(data: ScanResult[], col: string): ScanResult[] {
 }
 
 export function Scanner() {
-  const { beginnerMode } = useBeginnerMode();
+  const { isBeginner, isProfessional } = useExpertise();
   const [activeTab, setActiveTab] = useState<ScannerType>("penny");
   const [sortColMap, setSortColMap] = useState<Record<ScannerType, string>>({
     penny: "score",
@@ -451,7 +451,7 @@ export function Scanner() {
         <InfoIcon text={currentTab.description} />
       </div>
 
-      {beginnerMode && (
+      {isBeginner && (
         <div
           style={{
             padding: "10px 14px",
@@ -464,7 +464,8 @@ export function Scanner() {
           }}
         >
           📚 <strong>Click column headers to sort.</strong> Scores show opportunity strength (0–100).{" "}
-          RSI below 30 = oversold (potential bounce). RSI above 70 = overbought (potential drop).
+          RSI (overbought/oversold indicator) below 30 = potential bounce. RSI above 70 = potential drop.{" "}
+          Volume Spike means unusually high trading activity — often a sign of big news or moves.
         </div>
       )}
 

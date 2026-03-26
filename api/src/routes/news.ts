@@ -1,21 +1,16 @@
 import { Hono } from "hono";
 import { db } from "@marketpulse/db/client";
 import { newsItems } from "@marketpulse/db/schema";
-import { desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 
 export const newsRouter = new Hono();
 
-// GET /v1/news — recent news items, optionally filtered by ticker
+// GET /v1/news — recent news items, optionally filtered by ticker or source
 newsRouter.get("/", async (c) => {
   const limit = Math.min(Number(c.req.query("limit") ?? "20"), 100);
   const ticker = c.req.query("ticker")?.toUpperCase();
   const since = c.req.query("since"); // ISO timestamp
-
-  let query = db
-    .select()
-    .from(newsItems)
-    .orderBy(desc(newsItems.publishedAt))
-    .limit(limit);
+  const source = c.req.query("source");
 
   const conditions = [];
 
@@ -24,22 +19,44 @@ newsRouter.get("/", async (c) => {
   }
 
   if (ticker) {
-    // Filter by ticker mention in the tickers jsonb array
-    conditions.push(
-      sql`${newsItems.tickers} @> ${JSON.stringify([ticker])}::jsonb`
-    );
+    conditions.push(sql`${newsItems.tickers} @> ${JSON.stringify([ticker])}::jsonb`);
   }
 
-  if (conditions.length > 0) {
-    const rows = await db
-      .select()
-      .from(newsItems)
-      .where(conditions.length === 1 ? conditions[0] : sql`${conditions[0]} AND ${conditions[1]}`)
-      .orderBy(desc(newsItems.publishedAt))
-      .limit(limit);
-    return c.json(rows);
+  if (source) {
+    conditions.push(eq(newsItems.source, source));
   }
 
-  const rows = await query;
+  const rows = await db
+    .select()
+    .from(newsItems)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(newsItems.publishedAt))
+    .limit(limit);
+
   return c.json(rows);
+});
+
+// GET /v1/news/sentiment-summary — 24h sentiment breakdown
+newsRouter.get("/sentiment-summary", async (c) => {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({ sentiment: newsItems.sentiment })
+    .from(newsItems)
+    .where(gte(newsItems.fetchedAt, since));
+
+  let bullish = 0;
+  let bearish = 0;
+  let neutral = 0;
+
+  for (const row of rows) {
+    if (row.sentiment === "bullish") bullish++;
+    else if (row.sentiment === "bearish") bearish++;
+    else neutral++;
+  }
+
+  const total = bullish + bearish + neutral;
+  const sentimentScore = total > 0 ? Math.round((bullish - bearish) / total * 100) : 0;
+
+  return c.json({ bullish, bearish, neutral, sentimentScore, period: "24h" });
 });

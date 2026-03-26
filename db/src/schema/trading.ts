@@ -218,6 +218,25 @@ export const newsItems = pgTable(
   })
 );
 
+// ─── reddit_mentions ──────────────────────────────────────────────────────────
+
+export const redditMentions = pgTable(
+  "reddit_mentions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticker: varchar("ticker", { length: 20 }).notNull(),
+    postTitle: text("post_title").notNull(),
+    upvotes: integer("upvotes").default(0),
+    upvoteRatio: decimal("upvote_ratio", { precision: 5, scale: 4 }),
+    sentiment: varchar("sentiment", { length: 20 }).default("neutral"),
+    fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tickerIdx: index("reddit_mentions_ticker_idx").on(table.ticker),
+    fetchedAtIdx: index("reddit_mentions_fetched_at_idx").on(table.fetchedAt),
+  })
+);
+
 // ─── chat_messages ────────────────────────────────────────────────────────────
 
 export const chatMessages = pgTable(
@@ -270,6 +289,79 @@ export const signalOutcomes = pgTable(
     outcomeIdx: index("signal_outcomes_outcome_idx").on(table.outcome),
   })
 );
+
+// ─── options_flow ─────────────────────────────────────────────────────────────
+
+export const optionsFlow = pgTable(
+  "options_flow",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticker: varchar("ticker", { length: 20 }).notNull(),
+    contractType: varchar("contract_type", { length: 10 }).notNull(), // "call" | "put"
+    strike: decimal("strike", { precision: 10, scale: 2 }),
+    expiry: varchar("expiry", { length: 20 }),
+    volume: integer("volume").default(0),
+    openInterest: integer("open_interest").default(0),
+    impliedVolatility: decimal("implied_volatility", { precision: 8, scale: 4 }),
+    isUnusual: boolean("is_unusual").default(false),
+    sentiment: varchar("sentiment", { length: 20 }).default("neutral"), // bullish/bearish/neutral
+    fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tickerIdx: index("options_flow_ticker_idx").on(table.ticker),
+    fetchedAtIdx: index("options_flow_fetched_at_idx").on(table.fetchedAt),
+    isUnusualIdx: index("options_flow_is_unusual_idx").on(table.isUnusual),
+  })
+);
+
+// ─── earnings_events ──────────────────────────────────────────────────────────
+
+export const earningsEvents = pgTable(
+  "earnings_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticker: varchar("ticker", { length: 20 }).notNull(),
+    companyName: varchar("company_name", { length: 100 }),
+    reportDate: timestamp("report_date").notNull(),
+    estimatedEPS: decimal("estimated_eps", { precision: 10, scale: 4 }),
+    actualEPS: decimal("actual_eps", { precision: 10, scale: 4 }),
+    epsSurprise: decimal("eps_surprise", { precision: 10, scale: 4 }),
+    epsSurprisePct: decimal("eps_surprise_pct", { precision: 8, scale: 4 }),
+    beat: boolean("beat"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tickerIdx: index("earnings_events_ticker_idx").on(table.ticker),
+    reportDateIdx: index("earnings_events_report_date_idx").on(table.reportDate),
+  })
+);
+
+// ─── watchlist_items ──────────────────────────────────────────────────────────
+
+export const watchlistItems = pgTable(
+  "watchlist_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticker: varchar("ticker", { length: 20 }).notNull(),
+    alertThreshold: decimal("alert_threshold", { precision: 5, scale: 2 }),
+    notes: text("notes"),
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tickerIdx: index("watchlist_items_ticker_idx").on(table.ticker),
+  })
+);
+
+// ─── api_keys ─────────────────────────────────────────────────────────────────
+
+export const apiKeys = pgTable("api_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  keyHash: varchar("key_hash", { length: 64 }).notNull().unique(),
+  label: varchar("label", { length: 100 }),
+  requestCount: integer("request_count").default(0),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // ─── trades ───────────────────────────────────────────────────────────────────
 

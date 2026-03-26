@@ -1,6 +1,6 @@
 import { db } from "@marketpulse/db/client";
-import { indicators, indicatorValues, marketScores, alerts } from "@marketpulse/db/schema";
-import { eq, and, desc, gte, isNull } from "drizzle-orm";
+import { indicators, indicatorValues, marketScores, alerts, newsItems, earningsEvents, alertWebhooks, macroEvents } from "@marketpulse/db/schema";
+import { eq, and, desc, gte, lte, isNull } from "drizzle-orm";
 import type { Market } from "@marketpulse/shared";
 import { CRASH_SCORE_THRESHOLDS } from "@marketpulse/shared";
 
@@ -74,6 +74,99 @@ function computeWeightedScore(
   return totalWeight > 0 ? weightedSum / totalWeight : 50;
 }
 
+async function getNewsSentimentAdjustment(): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({ sentiment: newsItems.sentiment })
+    .from(newsItems)
+    .where(gte(newsItems.fetchedAt, since));
+
+  const total = rows.length;
+  if (total === 0) return 0;
+
+  const bullish = rows.filter(r => r.sentiment === "bullish").length;
+  const bearish = rows.filter(r => r.sentiment === "bearish").length;
+  const sentimentScore = (bullish - bearish) / total * 100;
+
+  let adjustment = 0;
+  if (sentimentScore < -50) {
+    adjustment = 10;
+    console.log("[score] news sentiment contribution: +10 (extreme bearish)");
+  } else if (sentimentScore < -30) {
+    adjustment = 5;
+    console.log("[score] news sentiment contribution: +5 (strong bearish)");
+  } else if (sentimentScore > 30) {
+    adjustment = -3;
+    console.log("[score] news sentiment contribution: -3 (bullish)");
+  }
+
+  return adjustment;
+}
+
+// Major tickers whose earnings create broad market uncertainty
+const MAJOR_EARNINGS_TICKERS = new Set([
+  "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "JPM", "BAC", "GS",
+]);
+
+const SEVERITY_RANK: Record<string, number> = { warning: 1, critical: 2, extreme: 3 };
+
+async function deliverWebhooks(alert: typeof alerts.$inferSelect): Promise<void> {
+  const webhooks = await db
+    .select()
+    .from(alertWebhooks)
+    .where(eq(alertWebhooks.isActive, true));
+
+  for (const wh of webhooks) {
+    if ((SEVERITY_RANK[alert.severity] ?? 0) >= (SEVERITY_RANK[wh.minSeverity] ?? 0)) {
+      fetch(wh.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          market: alert.market,
+          severity: alert.severity,
+          crashScore: alert.crashScore,
+          message: alert.message,
+          triggeredAt: alert.triggeredAt,
+        }),
+      }).catch((e: Error) => console.error("[webhook] delivery failed:", e.message));
+    }
+  }
+}
+
+async function getFomcProximityAdjustment(): Promise<number> {
+  const now = new Date();
+  const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+  const upcoming = await db
+    .select({ id: macroEvents.id })
+    .from(macroEvents)
+    .where(and(eq(macroEvents.eventType, "fomc"), gte(macroEvents.eventDate, now), lte(macroEvents.eventDate, in3Days)))
+    .limit(1);
+
+  if (upcoming.length > 0) {
+    console.log("[score] FOMC proximity: +2 (meeting within 3 days)");
+    return 2;
+  }
+  return 0;
+}
+
+async function getEarningsUncertaintyAdjustment(): Promise<number> {
+  const now = new Date();
+  const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+  const upcoming = await db
+    .select({ ticker: earningsEvents.ticker })
+    .from(earningsEvents)
+    .where(and(gte(earningsEvents.reportDate, now), lte(earningsEvents.reportDate, in3Days)));
+
+  const majorCount = upcoming.filter((r) => MAJOR_EARNINGS_TICKERS.has(r.ticker)).length;
+
+  if (majorCount >= 3) {
+    console.log(`[score] earnings uncertainty: +3 (${majorCount} major companies reporting in 3 days)`);
+    return 3;
+  }
+  return 0;
+}
+
 export async function calculateMarketScores(): Promise<void> {
   const latestValues = await getLatestIndicatorValues();
 
@@ -81,6 +174,10 @@ export async function calculateMarketScores(): Promise<void> {
     console.warn("[scoring] No recent indicator values found");
     return;
   }
+
+  const sentimentAdjustment = await getNewsSentimentAdjustment();
+  const earningsAdjustment = await getEarningsUncertaintyAdjustment();
+  const fomcAdjustment = await getFomcProximityAdjustment();
 
   const marketScoreMap: Record<Market, number> = {
     global: computeWeightedScore(latestValues, {}),
@@ -90,7 +187,7 @@ export async function calculateMarketScores(): Promise<void> {
   };
 
   for (const market of MARKETS) {
-    const score = marketScoreMap[market];
+    const score = marketScoreMap[market] + sentimentAdjustment + earningsAdjustment + fomcAdjustment;
     const crashScore = Math.min(100, Math.max(0, Math.round(score * 100) / 100));
 
     await db.insert(marketScores).values({
@@ -124,13 +221,14 @@ export async function calculateMarketScores(): Promise<void> {
         .limit(1);
 
       if (existing.length === 0) {
-        await db.insert(alerts).values({
+        const [newAlert] = await db.insert(alerts).values({
           market,
           severity,
           message: `${market.toUpperCase()} crash probability at ${crashScore.toFixed(1)}% — ${severity} threshold exceeded`,
           crashScore: String(crashScore),
           triggeredAt: new Date(),
-        });
+        }).returning();
+        await deliverWebhooks(newAlert);
       }
     }
 

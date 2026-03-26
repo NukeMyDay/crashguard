@@ -2,14 +2,17 @@ import { useEffect, useState } from "react";
 import {
   AreaChart,
   Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import { getScoreHistory, getRegimeHistory, getSignals } from "../api.js";
+import { getScoreHistory, getRegimeHistory, getSignals, getMacroEvents } from "../api.js";
 import {
   C,
   Card,
@@ -56,6 +59,22 @@ const OUTCOME_COLORS: Record<string, string> = {
   LOSS: C.red,
   OPEN: C.amber,
 };
+
+const EVENT_TYPE_COLORS: Record<string, string> = {
+  FOMC: "#3b82f6",
+  CPI: "#f59e0b",
+  JOBS: "#10b981",
+};
+
+const IMPACT_COLORS: Record<string, string> = {
+  HIGH: C.red,
+  MEDIUM: C.amber,
+  LOW: C.green,
+};
+
+function eventColor(type: string): string {
+  return EVENT_TYPE_COLORS[type?.toUpperCase()] ?? "#94a3b8";
+}
 
 function ButtonGroup<T extends string | number>({
   options,
@@ -128,14 +147,173 @@ function CustomTooltip({ active, payload }: any) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Multi-Market Comparison Chart
+// ---------------------------------------------------------------------------
+const MULTI_MARKET_COLORS: Record<MarketKey, string> = {
+  global: "#f1f5f9",
+  us: "#3b82f6",
+  eu: "#f59e0b",
+  asia: "#10b981",
+};
+
+function MultiMarketTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div
+      style={{
+        background: "#1a2332",
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        padding: "10px 14px",
+        fontSize: 12,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+      }}
+    >
+      <div style={{ color: C.textSecondary, marginBottom: 6 }}>{label}</div>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+          <span style={{ color: p.color, textTransform: "capitalize" }}>{p.dataKey}</span>
+          <span style={{ color: p.color, fontWeight: 700, fontFamily: "monospace" }}>
+            {p.value?.toFixed(1) ?? "—"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MultiMarketChart({ days }: { days: DaysOption }) {
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [highlighted, setHighlighted] = useState<MarketKey | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    const markets: MarketKey[] = ["global", "us", "eu", "asia"];
+    Promise.all(markets.map((m) => getScoreHistory(m, days).catch(() => [])))
+      .then(([global, us, eu, asia]) => {
+        // Merge by date label
+        const map: Record<string, any> = {};
+        function insert(arr: any[], key: MarketKey) {
+          for (const s of arr) {
+            const d = new Date(s.calculatedAt);
+            const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            if (!map[label]) map[label] = { time: label };
+            map[label][key] = Number(s.crashScore);
+          }
+        }
+        insert(global, "global");
+        insert(us, "us");
+        insert(eu, "eu");
+        insert(asia, "asia");
+        const merged = Object.values(map).sort((a, b) => {
+          // Sort by parsing the label back — approximate
+          return a.time.localeCompare(b.time);
+        });
+        setData(merged);
+      })
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  if (loading) return <div style={{ height: 300, background: "#1e293b", borderRadius: 8, opacity: 0.4 }} />;
+  if (data.length === 0) return (
+    <EmptyState icon="📉" title="No comparison data" subtitle="Historical score data not yet available for all markets." />
+  );
+
+  const markets: MarketKey[] = ["global", "us", "eu", "asia"];
+
+  return (
+    <Card style={{ padding: "16px 18px" }}>
+      {/* Legend with current scores */}
+      <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
+        {markets.map((m) => {
+          const last = data[data.length - 1]?.[m];
+          const color = MULTI_MARKET_COLORS[m];
+          const isHigh = highlighted === m;
+          return (
+            <button
+              key={m}
+              onClick={() => setHighlighted(isHigh ? null : m)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: isHigh ? `${color}18` : "transparent",
+                border: `1px solid ${isHigh ? color + "44" : C.border}`,
+                borderRadius: 8,
+                padding: "5px 12px",
+                cursor: "pointer",
+                transition: "all 0.12s",
+              }}
+            >
+              <div style={{ width: 12, height: 3, background: color, borderRadius: 2 }} />
+              <span style={{ color: color, fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{m}</span>
+              {last != null && (
+                <span style={{ color: getScoreColor(last), fontSize: 13, fontWeight: 700, fontFamily: "monospace" }}>
+                  {last.toFixed(1)}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={data} margin={{ top: 10, right: 10, bottom: 0, left: -10 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1a2436" vertical={false} />
+          <XAxis
+            dataKey="time"
+            stroke="#2a3a50"
+            tick={{ fill: C.textMuted, fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            domain={[0, 100]}
+            stroke="#2a3a50"
+            tick={{ fill: C.textMuted, fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            width={28}
+          />
+          <Tooltip content={<MultiMarketTooltip />} />
+          <ReferenceLine y={75} stroke="#ef444855" strokeDasharray="5 3" />
+          <ReferenceLine y={50} stroke="#f59e0b55" strokeDasharray="5 3" />
+          {markets.map((m) => {
+            const color = MULTI_MARKET_COLORS[m];
+            const dim = highlighted != null && highlighted !== m;
+            return (
+              <Line
+                key={m}
+                type="monotone"
+                dataKey={m}
+                stroke={color}
+                strokeWidth={highlighted === m ? 3 : dim ? 1 : 2}
+                dot={false}
+                opacity={dim ? 0.25 : 1}
+                activeDot={{ r: 4, fill: color, strokeWidth: 0 }}
+              />
+            );
+          })}
+        </LineChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
 export function History() {
   const { beginnerMode } = useBeginnerMode();
+  const [activeTab, setActiveTab] = useState<"single" | "comparison">("single");
   const [market, setMarket] = useState<MarketKey>("global");
   const [days, setDays] = useState<DaysOption>(30);
 
   const [scoreHistory, setScoreHistory] = useState<any[]>([]);
   const [regimeHistory, setRegimeHistory] = useState<any[]>([]);
   const [closedSignals, setClosedSignals] = useState<any[]>([]);
+  const [macroEvents, setMacroEvents] = useState<any[]>([]);
+  const [eventTypeFilter, setEventTypeFilter] = useState<Set<string>>(new Set(["FOMC", "CPI", "JOBS"]));
   const [searchQuery, setSearchQuery] = useState("");
 
   const [scoreLoading, setScoreLoading] = useState(true);
@@ -178,6 +356,9 @@ export function History() {
 
   useEffect(() => { loadScores(market, days); }, [market, days]);
   useEffect(() => {
+    getMacroEvents(days).then(setMacroEvents).catch(() => setMacroEvents([]));
+  }, [days]);
+  useEffect(() => {
     loadRegimeAndSignals();
     const interval = setInterval(loadRegimeAndSignals, 60_000);
     return () => clearInterval(interval);
@@ -195,6 +376,25 @@ export function History() {
         score: Number(s.crashScore),
       };
     });
+
+  // Map macro events to chart time strings
+  const eventLines = macroEvents
+    .map((ev: any) => {
+      const evMs = new Date(ev.date).getTime();
+      let best: { time: string; fullDate: string; score: number } | null = null;
+      let bestDiff = Infinity;
+      for (const p of chartData) {
+        const diff = Math.abs(new Date(p.fullDate).getTime() - evMs);
+        if (diff < bestDiff) { bestDiff = diff; best = p; }
+      }
+      if (!best || bestDiff > 3 * 24 * 60 * 60 * 1000) return null;
+      return { ...ev, xVal: best.time };
+    })
+    .filter(Boolean) as any[];
+
+  // Today and upcoming 7 days for highlighting
+  const now = Date.now();
+  const week = 7 * 24 * 60 * 60 * 1000;
 
   // Filter signals by search
   const filteredSignals = closedSignals.filter((s) => {
@@ -223,22 +423,53 @@ export function History() {
         </p>
       </div>
 
+      {/* Tab selector */}
+      <div style={{ display: "flex", gap: 3, marginBottom: 24, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 3, width: "fit-content" }}>
+        {[
+          { id: "single", label: "Score History" },
+          { id: "comparison", label: "Market Comparison" },
+        ].map((tab) => {
+          const isAct = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as "single" | "comparison")}
+              style={{
+                padding: "7px 18px",
+                borderRadius: 7,
+                border: isAct ? `1px solid ${C.blue}44` : "1px solid transparent",
+                background: isAct ? `${C.blue}1a` : "transparent",
+                color: isAct ? C.blue : "#64748b",
+                fontWeight: isAct ? 600 : 400,
+                fontSize: 13,
+                cursor: "pointer",
+                transition: "all 0.12s",
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Selectors */}
       <div style={{ display: "flex", gap: 16, marginBottom: 28, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div>
-          <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Market
+        {activeTab === "single" && (
+          <div>
+            <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+              Market
+            </div>
+            <ButtonGroup
+              options={MARKET_OPTIONS.map((m) => m.value)}
+              active={market}
+              onSelect={setMarket}
+              labelFn={(v) => {
+                const m = MARKET_OPTIONS.find((mo) => mo.value === v);
+                return `${m?.flag} ${m?.label}`;
+              }}
+            />
           </div>
-          <ButtonGroup
-            options={MARKET_OPTIONS.map((m) => m.value)}
-            active={market}
-            onSelect={setMarket}
-            labelFn={(v) => {
-              const m = MARKET_OPTIONS.find((mo) => mo.value === v);
-              return `${m?.flag} ${m?.label}`;
-            }}
-          />
-        </div>
+        )}
         <div>
           <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
             Period
@@ -252,7 +483,23 @@ export function History() {
         </div>
       </div>
 
-      {/* Section 1: Score History */}
+      {/* Market Comparison Tab */}
+      {activeTab === "comparison" && (
+        <div style={{ marginBottom: 32 }}>
+          <SectionTitle info="Crash probability scores for all 4 markets over time. Click a legend item to highlight that market's line.">
+            Multi-Market Comparison — {days}d
+          </SectionTitle>
+          <MultiMarketChart days={days} />
+          {beginnerMode && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: `${C.blue}0d`, border: `1px solid ${C.blue}22`, borderRadius: 8, fontSize: 12, color: C.textSecondary }}>
+              📚 Each line shows a different region's crash probability score. When all lines rise together, a global risk event may be unfolding. When only one rises, the risk is regional.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Section 1: Score History (single market tab) */}
+      {activeTab === "single" && (<>
       <div style={{ marginBottom: 32 }}>
         <SectionTitle>
           Crash Score History — {MARKET_OPTIONS.find((m) => m.value === market)?.label}
@@ -308,6 +555,18 @@ export function History() {
                   strokeDasharray="5 3"
                   label={{ value: "High (50)", fill: "#f59e0b", fontSize: 10, position: "insideTopLeft" }}
                 />
+                {eventLines.map((ev: any, i: number) => {
+                  const color = eventColor(ev.type);
+                  return (
+                    <ReferenceLine
+                      key={i}
+                      x={ev.xVal}
+                      stroke={color + "99"}
+                      strokeDasharray="4 3"
+                      label={{ value: ev.type?.toUpperCase() ?? "", fill: color, fontSize: 9, position: "insideTopLeft" }}
+                    />
+                  );
+                })}
                 <Area
                   type="monotone"
                   dataKey="score"
@@ -341,7 +600,131 @@ export function History() {
         )}
       </div>
 
-      {/* Section 2: Regime Timeline */}
+      </>)}
+
+      {/* Section 2: Macro Event Calendar */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <SectionTitle>Macro Event Calendar</SectionTitle>
+          {/* Filter checkboxes */}
+          <div style={{ display: "flex", gap: 8 }}>
+            {["FOMC", "CPI", "JOBS"].map((t) => {
+              const active = eventTypeFilter.has(t);
+              const color = eventColor(t);
+              return (
+                <button
+                  key={t}
+                  onClick={() => setEventTypeFilter((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(t)) next.delete(t); else next.add(t);
+                    return next;
+                  })}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    border: `1px solid ${active ? color + "88" : C.border}`,
+                    background: active ? color + "18" : "transparent",
+                    color: active ? color : C.textMuted,
+                    fontSize: 11,
+                    fontWeight: active ? 600 : 400,
+                    cursor: "pointer",
+                    transition: "all 0.12s",
+                  }}
+                >
+                  {t}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {macroEvents.length === 0 ? (
+          <EmptyState icon="📅" title="No macro events" subtitle="Macro events will appear here when available." />
+        ) : (
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={TH}>Date</th>
+                    <th style={TH}>Event</th>
+                    <th style={TH}>Type</th>
+                    <th style={TH}>Impact</th>
+                    <th style={TH}>Days Until</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {macroEvents
+                    .filter((ev: any) => eventTypeFilter.has(ev.type?.toUpperCase()))
+                    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .map((ev: any, i: number) => {
+                      const evMs = new Date(ev.date).getTime();
+                      const diffMs = evMs - now;
+                      const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000));
+                      const isUpcoming = diffMs >= 0 && diffMs <= week;
+                      const isPast = diffMs < 0;
+                      const color = eventColor(ev.type);
+                      const impactKey = (ev.impact ?? "").toUpperCase();
+                      const impactColor = IMPACT_COLORS[impactKey] ?? C.textMuted;
+                      return (
+                        <tr
+                          key={ev.id ?? i}
+                          style={{ background: isUpcoming ? `${C.blue}08` : undefined }}
+                        >
+                          <td style={{ ...TD, color: isUpcoming ? C.blue : C.textMuted, fontWeight: isUpcoming ? 600 : 400 }}>
+                            {new Date(ev.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </td>
+                          <td style={{ ...TD, color: C.textPrimary }}>
+                            {ev.title ?? ev.name ?? ev.type}
+                          </td>
+                          <td style={TD}>
+                            <span
+                              style={{
+                                color,
+                                background: color + "18",
+                                border: `1px solid ${color}44`,
+                                padding: "2px 8px",
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {ev.type?.toUpperCase()}
+                            </span>
+                          </td>
+                          <td style={TD}>
+                            <span
+                              style={{
+                                color: impactColor,
+                                background: impactColor + "18",
+                                border: `1px solid ${impactColor}44`,
+                                padding: "2px 8px",
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {ev.impact ?? "—"}
+                            </span>
+                          </td>
+                          <td style={{ ...TD, fontVariantNumeric: "tabular-nums", color: isPast ? C.textMuted : isUpcoming ? C.blue : C.textSecondary }}>
+                            {isPast
+                              ? `${Math.abs(diffDays)}d ago`
+                              : diffDays === 0
+                              ? "Today"
+                              : `${diffDays}d`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* Section 3: Regime Timeline */}
       <div style={{ marginBottom: 32 }}>
         <SectionTitle>Regime Change Timeline</SectionTitle>
 
@@ -404,7 +787,7 @@ export function History() {
         )}
       </div>
 
-      {/* Section 3: Signal Performance */}
+      {/* Section 4: Signal Performance */}
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>

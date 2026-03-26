@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import {
   LineChart,
   Line,
-  AreaChart,
-  Area,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -11,7 +12,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { getPortfolio, getPortfolioPerformance, executeTrade } from "../api.js";
+import { getPortfolio, getPortfolioPerformance, executeTrade, getStressTest } from "../api.js";
 import {
   C,
   Card,
@@ -56,6 +57,227 @@ interface PerfPoint {
   date: string;
   portfolioValue: number;
   spyValue?: number;
+}
+
+const STRESS_SCENARIOS = [
+  { id: "drop20", label: "Drop 20%" },
+  { id: "drop40", label: "Drop 40%" },
+  { id: "crisis2008", label: "2008 Crisis" },
+  { id: "covid2020", label: "COVID 2020" },
+  { id: "bear2022", label: "2022 Bear" },
+];
+
+function StressTestSection() {
+  const { beginnerMode } = useBeginnerMode();
+  const [scenario, setScenario] = useState<string | null>(null);
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function runTest(s: string) {
+    setScenario(s);
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getStressTest(s);
+      setResult(data);
+    } catch (e) {
+      setError(String(e));
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const barData: any[] = result?.positions?.map((p: any) => ({
+    name: p.instrument,
+    current: Number(p.currentValue ?? 0),
+    stressed: Number(p.stressedValue ?? 0),
+    isGain: Number(p.stressedValue ?? 0) > Number(p.currentValue ?? 0),
+  })) ?? [];
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <SectionTitle>Stress Test</SectionTitle>
+
+      {beginnerMode && (
+        <div
+          style={{
+            padding: "10px 14px",
+            background: `${C.blue}0d`,
+            border: `1px solid ${C.blue}22`,
+            borderRadius: 8,
+            fontSize: 12,
+            color: C.textSecondary,
+            marginBottom: 16,
+          }}
+        >
+          📚 <strong>Stress testing</strong> simulates how your portfolio would perform during historical market
+          crashes. It helps you understand your downside risk so you can hedge or rebalance proactively.
+        </div>
+      )}
+
+      {/* Scenario selector */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        {STRESS_SCENARIOS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => runTest(s.id)}
+            disabled={loading}
+            style={{
+              padding: "7px 16px",
+              borderRadius: 8,
+              border: `1px solid ${scenario === s.id ? C.red + "88" : C.border}`,
+              background: scenario === s.id ? `${C.red}18` : "transparent",
+              color: scenario === s.id ? "#fca5a5" : C.textSecondary,
+              fontSize: 13,
+              fontWeight: scenario === s.id ? 600 : 400,
+              cursor: loading ? "not-allowed" : "pointer",
+              transition: "all 0.12s",
+            }}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && <SkeletonBlock height={200} />}
+
+      {error && !loading && (
+        <div
+          style={{
+            padding: "10px 14px",
+            background: `${C.red}1a`,
+            border: `1px solid ${C.red}44`,
+            borderRadius: 8,
+            color: "#fca5a5",
+            fontSize: 13,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {result && !loading && (
+        <Card>
+          {/* Summary cards */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 130 }}>
+              <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                Total Loss
+              </div>
+              <div style={{ color: C.red, fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                -${Math.abs(result.totalLoss ?? 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </div>
+              <div style={{ color: C.red, fontSize: 13, marginTop: 2 }}>
+                -{Math.abs(result.totalLossPct ?? 0).toFixed(1)}%
+              </div>
+            </div>
+            {result.worstPosition && (
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 130,
+                  padding: "10px 14px",
+                  background: `${C.red}0d`,
+                  border: `1px solid ${C.red}22`,
+                  borderRadius: 8,
+                }}
+              >
+                <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                  Worst Position
+                </div>
+                <div style={{ color: C.textPrimary, fontWeight: 700, fontSize: 14 }}>{result.worstPosition.instrument}</div>
+                <div style={{ color: C.red, fontSize: 12 }}>-{Math.abs(result.worstPosition.lossPct ?? 0).toFixed(1)}%</div>
+              </div>
+            )}
+            {result.bestHedge && (
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 130,
+                  padding: "10px 14px",
+                  background: `${C.green}0d`,
+                  border: `1px solid ${C.green}22`,
+                  borderRadius: 8,
+                }}
+              >
+                <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                  Best Hedge
+                </div>
+                <div style={{ color: C.textPrimary, fontWeight: 700, fontSize: 14 }}>{result.bestHedge.instrument}</div>
+                <div style={{ color: C.green, fontSize: 12 }}>+{Math.abs(result.bestHedge.gainPct ?? 0).toFixed(1)}%</div>
+              </div>
+            )}
+            {result.recoveryEstimate != null && (
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 130,
+                  padding: "10px 14px",
+                  background: `${C.amber}0d`,
+                  border: `1px solid ${C.amber}22`,
+                  borderRadius: 8,
+                }}
+              >
+                <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                  Recovery Estimate
+                </div>
+                <div style={{ color: C.amber, fontWeight: 700, fontSize: 14 }}>{result.recoveryEstimate} months</div>
+                {beginnerMode && <div style={{ color: C.textMuted, fontSize: 11 }}>at avg annual return</div>}
+              </div>
+            )}
+          </div>
+
+          {/* Position bar chart */}
+          {barData.length > 0 && (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={barData} margin={{ top: 5, right: 5, bottom: 20, left: 0 }} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2436" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: C.textMuted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fill: C.textMuted, fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={52}
+                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  contentStyle={{ background: "#1a2332", border: `1px solid ${C.border}`, fontSize: 12 }}
+                  formatter={(val: any, name: string) => [
+                    `$${Number(val).toLocaleString("en-US", { minimumFractionDigits: 0 })}`,
+                    name === "current" ? "Current" : "Stressed",
+                  ]}
+                />
+                <Bar dataKey="current" name="current" fill={C.blue + "77"} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="stressed" name="stressed" radius={[3, 3, 0, 0]}>
+                  {barData.map((entry: any, i: number) => (
+                    <Cell key={i} fill={entry.isGain ? C.green + "cc" : C.red + "cc"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </Card>
+      )}
+
+      {!result && !loading && !error && (
+        <div
+          style={{
+            padding: 30,
+            textAlign: "center",
+            color: C.textMuted,
+            fontSize: 13,
+            background: C.card,
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+          }}
+        >
+          Select a scenario above to simulate how your portfolio would perform.
+        </div>
+      )}
+    </div>
+  );
 }
 
 function fmt(n: number, decimals = 2): string {
@@ -544,6 +766,9 @@ export function Portfolio() {
               <EmptyState icon="📋" title="No trade history" subtitle="Your executed trades will appear here." />
             )}
           </div>
+
+          {/* Stress Test */}
+          {(portfolio.holdings?.length ?? 0) > 0 && <StressTestSection />}
 
           {/* Quick trade form */}
           <div style={{ marginBottom: 28 }}>

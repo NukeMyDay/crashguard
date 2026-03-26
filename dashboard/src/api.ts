@@ -76,3 +76,47 @@ export function getNews(limit = 50) {
 export function getStrategyPerformance() {
   return fetchJSON<any[]>("/strategies/performance");
 }
+
+export function getOptionsFlow() {
+  return fetchJSON<any[]>("/options/flow");
+}
+
+export function getEarnings() {
+  return fetchJSON<any[]>("/earnings");
+}
+
+export function getStressTest(scenario: string) {
+  return fetchJSON<any>("/portfolio/stress-test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scenario }),
+  });
+}
+
+export function getMacroEvents(days = 30) {
+  return fetchJSON<any[]>(`/macro-events?days=${days}`);
+}
+
+export function getWebhooks() {
+  return fetchJSON<any[]>("/alerts/webhooks");
+}
+
+export function addWebhook(url: string, severity: string) {
+  return fetchJSON<any>("/alerts/webhook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, severity }),
+  });
+}
+
+export function deleteWebhook(id: string) {
+  return fetchJSON<any>(`/alerts/webhooks/${id}`, { method: "DELETE" });
+}
+
+export function testWebhookUrl(url: string) {
+  return fetchJSON<any>("/alerts/webhook/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+}

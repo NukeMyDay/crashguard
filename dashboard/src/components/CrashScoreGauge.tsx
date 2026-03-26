@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getScoreColor, getScoreLabel, C } from "../context.js";
+import { getScoreColor, getScoreLabel, C, useExpertise } from "../context.js";
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -20,6 +20,7 @@ interface Props {
 
 export function CrashScoreGauge({ score, size = 220 }: Props) {
   const [showTooltip, setShowTooltip] = useState(false);
+  const { isBeginner } = useExpertise();
   const safeScore = Math.min(100, Math.max(0, score || 0));
   const cx = size / 2;
   const cy = size / 2 + 14;
@@ -176,6 +177,29 @@ export function CrashScoreGauge({ score, size = 220 }: Props) {
         >
           The Crash Probability Score aggregates 12 market indicators weighted by historical predictive
           power. A score above 70 preceded 80% of major corrections since 2008.
+        </div>
+      )}
+
+      {isBeginner && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 14px",
+            background: `${C.blue}0d`,
+            border: `1px solid ${C.blue}33`,
+            borderRadius: 8,
+            fontSize: 12,
+            color: C.textSecondary,
+            maxWidth: size,
+            lineHeight: 1.6,
+            textAlign: "center",
+          }}
+        >
+          <strong style={{ color: C.textPrimary }}>What does this score mean?</strong>
+          <br />
+          This score estimates the probability of a major market crash.{" "}
+          <span style={{ color: C.amber }}>Above 50 = elevated risk.</span>{" "}
+          <span style={{ color: C.red }}>Above 75 = danger zone.</span>
         </div>
       )}
     </div>

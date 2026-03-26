@@ -10,12 +10,24 @@ import {
   ReferenceLine,
 } from "recharts";
 import { C, getScoreColor } from "../context.js";
+import { getMacroEvents } from "../api.js";
 
 interface ChartPoint {
   time: string;
   date: string;
+  isoDate: string;
   score: number;
   regime?: string;
+}
+
+const EVENT_COLORS: Record<string, string> = {
+  FOMC: "#3b82f6",
+  CPI: "#f59e0b",
+  JOBS: "#10b981",
+};
+
+function eventColor(type: string): string {
+  return EVENT_COLORS[type?.toUpperCase()] ?? "#94a3b8";
 }
 
 const RANGE_OPTIONS = [
@@ -63,6 +75,7 @@ export function ScoreHistoryChart({ market = "global", initialDays = 30 }: Props
   const [history, setHistory] = useState<ChartPoint[]>([]);
   const [days, setDays] = useState(initialDays);
   const [loading, setLoading] = useState(true);
+  const [macroEvents, setMacroEvents] = useState<any[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -76,6 +89,7 @@ export function ScoreHistoryChart({ market = "global", initialDays = 30 }: Props
             return {
               time: d.toLocaleDateString([], { month: "short", day: "numeric" }),
               date: d.toLocaleString(),
+              isoDate: s.calculatedAt,
               score: Number(s.crashScore),
               regime: s.regime,
             };
@@ -86,9 +100,28 @@ export function ScoreHistoryChart({ market = "global", initialDays = 30 }: Props
       .finally(() => setLoading(false));
   }, [market, days]);
 
+  useEffect(() => {
+    getMacroEvents(Math.max(days, 90)).then(setMacroEvents).catch(() => setMacroEvents([]));
+  }, [days]);
+
   // Gradient color based on score
   const lastScore = history.length > 0 ? history[history.length - 1].score : 50;
   const gradColor = getScoreColor(lastScore);
+
+  // Map macro events to chart x-axis values
+  const eventLines = macroEvents
+    .map((ev: any) => {
+      const evMs = new Date(ev.date).getTime();
+      let best: ChartPoint | null = null;
+      let bestDiff = Infinity;
+      for (const p of history) {
+        const diff = Math.abs(new Date(p.isoDate).getTime() - evMs);
+        if (diff < bestDiff) { bestDiff = diff; best = p; }
+      }
+      if (!best || bestDiff > 3 * 24 * 60 * 60 * 1000) return null;
+      return { ...ev, xVal: best.time };
+    })
+    .filter(Boolean) as any[];
 
   return (
     <div
@@ -170,6 +203,18 @@ export function ScoreHistoryChart({ market = "global", initialDays = 30 }: Props
               strokeDasharray="5 3"
               label={{ value: "High", fill: "#f59e0b", fontSize: 10, position: "insideTopLeft" }}
             />
+            {eventLines.map((ev: any, i: number) => {
+              const color = eventColor(ev.type);
+              return (
+                <ReferenceLine
+                  key={i}
+                  x={ev.xVal}
+                  stroke={color + "99"}
+                  strokeDasharray="4 3"
+                  label={{ value: ev.type?.toUpperCase() ?? "", fill: color, fontSize: 9, position: "insideTopLeft" }}
+                />
+              );
+            })}
             <Area
               type="monotone"
               dataKey="score"
