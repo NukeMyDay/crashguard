@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { db } from "@marketpulse/db/client";
+import { alerts, indicators, indicatorValues, marketScores } from "@marketpulse/db/schema";
+import { desc, gte, eq, sql } from "drizzle-orm";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { indicatorsRouter } from "./routes/indicators.js";
 import { alertsRouter } from "./routes/alerts.js";
@@ -24,13 +27,65 @@ import { publicRouter, apiKeysRouter } from "./routes/public.js";
 import { sectorsRouter } from "./routes/sectors.js";
 import { darkPoolRouter } from "./routes/dark-pool.js";
 import { momentumRouter } from "./routes/momentum.js";
+import { searchRouter } from "./routes/search.js";
+import { systemRouter } from "./routes/system.js";
 
 export const app = new Hono();
 
 app.use("*", logger());
 app.use("*", cors());
 
-app.get("/health", (c) => c.json({ status: "ok" }));
+app.get("/health", async (c) => {
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const [lastScore] = await db
+    .select({ calculatedAt: marketScores.calculatedAt })
+    .from(marketScores)
+    .orderBy(desc(marketScores.calculatedAt))
+    .limit(1);
+
+  const [{ count: alertCount }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(alerts)
+    .where(gte(alerts.triggeredAt, since24h));
+
+  // Count stale indicators
+  const allIndicators = await db
+    .select()
+    .from(indicators)
+    .where(eq(indicators.isActive, true));
+
+  let staleCount = 0;
+  for (const ind of allIndicators) {
+    const latest = await db
+      .select({ recordedAt: indicatorValues.recordedAt })
+      .from(indicatorValues)
+      .where(eq(indicatorValues.indicatorId, ind.id))
+      .orderBy(desc(indicatorValues.recordedAt))
+      .limit(1);
+
+    if (latest[0]) {
+      const ageMin = (Date.now() - new Date(latest[0].recordedAt).getTime()) / 60000;
+      const stale =
+        ind.frequency === "hourly" ? ageMin > 90 :
+        ind.frequency === "daily" ? ageMin > 26 * 60 :
+        ind.frequency === "weekly" ? ageMin > 8 * 24 * 60 : false;
+      if (stale) staleCount++;
+    } else {
+      staleCount++;
+    }
+  }
+
+  return c.json({
+    status: "ok",
+    version: "1.0.0",
+    uptime: Math.round(process.uptime()),
+    database: "connected",
+    staleIndicators: staleCount,
+    lastScoreCalculatedAt: lastScore?.calculatedAt ?? null,
+    totalAlerts24h: alertCount,
+  });
+});
 
 app.route("/v1/dashboard", dashboardRouter);
 app.route("/v1/indicators", indicatorsRouter);
@@ -57,5 +112,7 @@ app.route("/v1/api-keys", apiKeysRouter);
 app.route("/v1/sectors", sectorsRouter);
 app.route("/v1/dark-pool", darkPoolRouter);
 app.route("/v1/momentum", momentumRouter);
+app.route("/v1/search", searchRouter);
+app.route("/v1/system", systemRouter);
 
 export default app;

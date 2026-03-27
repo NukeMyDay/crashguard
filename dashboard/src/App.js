@@ -1,25 +1,30 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { useEffect, useState } from "react";
-import { Overview } from "./pages/Overview.js";
-import { Signals } from "./pages/Signals.js";
-import { Scanner } from "./pages/Scanner.js";
-import { Strategies } from "./pages/Strategies.js";
-import { Portfolio } from "./pages/Portfolio.js";
-import { History } from "./pages/History.js";
-import { News } from "./pages/News.js";
-import { Watchlist } from "./pages/Watchlist.js";
-import { Settings } from "./pages/Settings.js";
-import { Backtest } from "./pages/Backtest.js";
-import { DarkPool } from "./pages/DarkPool.js";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { ExpertiseLevelProvider, useExpertise, C } from "./context.js";
 import { ChatPanel } from "./components/ChatPanel.js";
-import { OnboardingTour } from "./components/OnboardingTour.js";
+import { CommandPalette } from "./components/CommandPalette.js";
+import { KeyboardHelp } from "./components/KeyboardHelp.js";
+import { SystemStatusBar } from "./components/SystemStatusBar.js";
+// Lazy-loaded pages for better initial load performance
+const Overview = lazy(() => import("./pages/Overview.js").then((m) => ({ default: m.Overview })));
+const Signals = lazy(() => import("./pages/Signals.js").then((m) => ({ default: m.Signals })));
+const Scanner = lazy(() => import("./pages/Scanner.js").then((m) => ({ default: m.Scanner })));
+const Strategies = lazy(() => import("./pages/Strategies.js").then((m) => ({ default: m.Strategies })));
+const Portfolio = lazy(() => import("./pages/Portfolio.js").then((m) => ({ default: m.Portfolio })));
+const History = lazy(() => import("./pages/History.js").then((m) => ({ default: m.History })));
+const News = lazy(() => import("./pages/News.js").then((m) => ({ default: m.News })));
+const Watchlist = lazy(() => import("./pages/Watchlist.js").then((m) => ({ default: m.Watchlist })));
+const Settings = lazy(() => import("./pages/Settings.js").then((m) => ({ default: m.Settings })));
+const Backtest = lazy(() => import("./pages/Backtest.js").then((m) => ({ default: m.Backtest })));
+function PageLoadingFallback() {
+    return (_jsx("div", { style: { padding: 40, display: "flex", justifyContent: "center", alignItems: "center", color: C.textMuted, fontSize: 13 }, children: "Loading\u2026" }));
+}
 function getHashRoute() {
     const hash = window.location.hash.replace(/^#/, "") || "/";
-    const valid = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/backtest", "/dark-pool", "/settings"];
+    const valid = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/settings", "/backtest"];
     return valid.includes(hash) ? hash : "/";
 }
-function useHashRoute() {
+function useHashRoute(setCommandPaletteOpen, setKeyboardHelpOpen) {
     const [route, setRoute] = useState(getHashRoute);
     useEffect(() => {
         function onHashChange() {
@@ -28,23 +33,55 @@ function useHashRoute() {
         window.addEventListener("hashchange", onHashChange);
         return () => window.removeEventListener("hashchange", onHashChange);
     }, []);
-    // Keyboard shortcuts: 1–7
+    // Global keyboard shortcuts
     useEffect(() => {
         function onKeyDown(e) {
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+            const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+            // Ctrl+K / Cmd+K — command palette
+            if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+                e.preventDefault();
+                setCommandPaletteOpen(true);
                 return;
-            const routes = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/backtest", "/dark-pool", "/settings"];
+            }
+            if (inInput)
+                return;
+            const routes = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/settings", "/backtest"];
+            // 1–9,0 — navigate pages
             const idx = parseInt(e.key) - 1;
             if (idx >= 0 && idx < routes.length) {
                 navigate(routes[idx]);
+                return;
             }
-            if (e.key.toLowerCase() === "d") {
-                navigate("/dark-pool");
+            switch (e.key) {
+                case "/":
+                    e.preventDefault();
+                    setCommandPaletteOpen(true);
+                    break;
+                case "?":
+                    setKeyboardHelpOpen(true);
+                    break;
+                case "r":
+                case "R":
+                    window.location.reload();
+                    break;
+                case "p":
+                case "P":
+                    window.print();
+                    break;
+                case "s":
+                case "S": {
+                    try {
+                        const current = localStorage.getItem("mp_sound_alerts");
+                        localStorage.setItem("mp_sound_alerts", current === "false" ? "true" : "false");
+                    }
+                    catch { }
+                    break;
+                }
             }
         }
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, []);
+    }, [setCommandPaletteOpen, setKeyboardHelpOpen]);
     function navigate(r) {
         window.location.hash = r;
         setRoute(r);
@@ -61,7 +98,6 @@ const NAV_ITEMS = [
     { route: "/history", label: "History", icon: "📅", shortcut: "7" },
     { route: "/news", label: "News", icon: "📰", shortcut: "8" },
     { route: "/backtest", label: "Backtest", icon: "⏱️", shortcut: "9" },
-    { route: "/dark-pool", label: "Dark Pool", icon: "🌑", shortcut: "D" },
     { route: "/settings", label: "Settings", icon: "⚙️", shortcut: "0" },
 ];
 const MARKETS = [
@@ -217,7 +253,7 @@ function Sidebar({ route, navigate }) {
 // ---------------------------------------------------------------------------
 // Top header
 // ---------------------------------------------------------------------------
-function TopHeader({ route }) {
+function TopHeader({ route, onHelpOpen }) {
     const pageLabels = {
         "/": "Overview",
         "/signals": "Signals",
@@ -228,7 +264,6 @@ function TopHeader({ route }) {
         "/history": "Historical Analysis",
         "/news": "News Feed",
         "/backtest": "Backtesting Engine",
-        "/dark-pool": "Dark Pool & Short Volume Monitor",
         "/settings": "Settings",
     };
     return (_jsxs("div", { style: {
@@ -241,53 +276,80 @@ function TopHeader({ route }) {
             flexShrink: 0,
             gap: 16,
             flexWrap: "wrap",
-        }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [_jsx("span", { style: { color: C.textMuted, fontSize: 13 }, children: "MarketPulse" }), _jsx("span", { style: { color: "#2a3a50", fontSize: 13 }, children: "/" }), _jsx("span", { style: { color: C.textPrimary, fontSize: 13, fontWeight: 500 }, children: pageLabels[route] })] }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }, children: [_jsx(MarketStatusBar, {}), _jsx(AutoRefreshIndicator, {}), _jsx(ExpertiseLevelSelector, {})] })] }));
+        }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [_jsx("span", { style: { color: C.textMuted, fontSize: 13 }, children: "MarketPulse" }), _jsx("span", { style: { color: "#2a3a50", fontSize: 13 }, children: "/" }), _jsx("span", { style: { color: C.textPrimary, fontSize: 13, fontWeight: 500 }, children: pageLabels[route] })] }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }, children: [_jsx(MarketStatusBar, {}), _jsx(AutoRefreshIndicator, {}), _jsx(ExpertiseLevelSelector, {}), _jsx("button", { onClick: onHelpOpen, title: "Keyboard shortcuts (?)", style: {
+                            background: "#1e293b",
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 6,
+                            color: C.textMuted,
+                            cursor: "pointer",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            width: 26,
+                            height: 26,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                        }, children: "?" })] })] }));
 }
 // ---------------------------------------------------------------------------
 // Page router
 // ---------------------------------------------------------------------------
 function PageContent({ route }) {
+    let page;
     switch (route) {
         case "/":
-            return _jsx(Overview, {});
+            page = _jsx(Overview, {});
+            break;
         case "/signals":
-            return _jsx(Signals, {});
+            page = _jsx(Signals, {});
+            break;
         case "/scanner":
-            return _jsx(Scanner, {});
+            page = _jsx(Scanner, {});
+            break;
         case "/strategies":
-            return _jsx(Strategies, {});
+            page = _jsx(Strategies, {});
+            break;
         case "/portfolio":
-            return _jsx(Portfolio, {});
+            page = _jsx(Portfolio, {});
+            break;
         case "/watchlist":
-            return _jsx(Watchlist, {});
+            page = _jsx(Watchlist, {});
+            break;
         case "/history":
-            return _jsx(History, {});
+            page = _jsx(History, {});
+            break;
         case "/news":
-            return _jsx(News, {});
+            page = _jsx(News, {});
+            break;
         case "/backtest":
-            return _jsx(Backtest, {});
-        case "/dark-pool":
-            return _jsx(DarkPool, {});
+            page = _jsx(Backtest, {});
+            break;
         case "/settings":
-            return _jsx(Settings, {});
+            page = _jsx(Settings, {});
+            break;
         default:
-            return _jsx(Overview, {});
+            page = _jsx(Overview, {});
+            break;
     }
+    return _jsx(Suspense, { fallback: _jsx(PageLoadingFallback, {}), children: page });
 }
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
 function AppInner() {
-    const [route, navigate] = useHashRoute();
+    const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+    const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
+    const [route, navigate] = useHashRoute(setCommandPaletteOpen, setKeyboardHelpOpen);
     return (_jsxs("div", { style: {
             display: "flex",
             minHeight: "100vh",
             background: C.bg,
             color: C.textPrimary,
             fontFamily: "'Inter', system-ui, sans-serif",
-        }, children: [_jsx(Sidebar, { route: route, navigate: navigate }), _jsxs("div", { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }, children: [_jsx(TopHeader, { route: route }), _jsx("main", { style: { flex: 1, overflowY: "auto", overflowX: "hidden" }, children: _jsx(PageContent, { route: route }) })] })] }));
+        }, children: [_jsx(Sidebar, { route: route, navigate: navigate }), _jsxs("div", { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }, children: [_jsx(TopHeader, { route: route, onHelpOpen: () => setKeyboardHelpOpen(true) }), _jsx("main", { style: { flex: 1, overflowY: "auto", overflowX: "hidden" }, children: _jsx(PageContent, { route: route }) }), _jsx(SystemStatusBar, {})] }), _jsx(CommandPalette, { open: commandPaletteOpen, onClose: () => setCommandPaletteOpen(false) }), _jsx(KeyboardHelp, { open: keyboardHelpOpen, onClose: () => setKeyboardHelpOpen(false) })] }));
 }
 function App() {
-    return (_jsxs(ExpertiseLevelProvider, { children: [_jsx(AppInner, {}), _jsx(ChatPanel, {}), _jsx(OnboardingTour, {})] }));
+    return (_jsxs(ExpertiseLevelProvider, { children: [_jsx(AppInner, {}), _jsx(ChatPanel, {})] }));
 }
 export default App;

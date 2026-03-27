@@ -8,110 +8,8 @@ import { ScoreHistoryChart } from "../components/ScoreHistoryChart.js";
 import { IndicatorTable } from "../components/IndicatorTable.js";
 import { AttributionPanel } from "../components/AttributionPanel.js";
 import { CorrelationHeatmap } from "../components/CorrelationHeatmap.js";
-import { SectorHeatmap } from "../components/SectorHeatmap.js";
+import { ReportExport } from "../components/ReportExport.js";
 import { C, Card, SectionTitle, ErrorBanner, SkeletonBlock, useExpertise, getScoreColor, getScoreLabel, } from "../context.js";
-
-// ---------------------------------------------------------------------------
-// Market Regime Badge
-// ---------------------------------------------------------------------------
-const REGIME_CONFIG = {
-  BULL: { color: "#22c55e", label: "BULL", icon: "🟢" },
-  BEAR: { color: "#ef4444", label: "BEAR", icon: "🔴" },
-  SIDEWAYS: { color: "#64748b", label: "SIDEWAYS", icon: "⬛" },
-  CRASH: { color: "#7f1d1d", label: "CRASH", icon: "🚨", pulse: true },
-  RECOVERY: { color: "#3b82f6", label: "RECOVERY", icon: "🔵" },
-};
-
-const REGIME_DESCRIPTIONS = {
-  BULL: "Markets are trending upward. Momentum and growth strategies perform best.",
-  BEAR: "Markets are declining. Only defensive strategies are active.",
-  SIDEWAYS: "Markets are range-bound. Mean reversion strategies are preferred.",
-  CRASH: "Extreme market stress. Risk management is paramount.",
-  RECOVERY: "Markets are bouncing back from a downturn. Early-cycle opportunities emerging.",
-};
-
-function RegimeBadge({ regime, activeStrategies }) {
-  const { isBeginner } = useExpertise();
-  const [showTooltip, setShowTooltip] = useState(false);
-
-  if (!regime) return null;
-
-  const key = String(regime).toUpperCase();
-  const config = REGIME_CONFIG[key] ?? { color: C.textMuted, label: key, icon: "📊" };
-  const description = REGIME_DESCRIPTIONS[key] ?? "Current market regime";
-
-  const strategies = Array.isArray(activeStrategies)
-    ? activeStrategies.map((s) => (typeof s === "string" ? s : s.name ?? s.id ?? String(s))).join(", ")
-    : typeof activeStrategies === "string"
-    ? activeStrategies
-    : null;
-
-  return _jsxs("div", {
-    style: { display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" },
-    children: [
-      // Pill badge with tooltip
-      _jsxs("div", {
-        style: { position: "relative" },
-        onMouseEnter: () => setShowTooltip(true),
-        onMouseLeave: () => setShowTooltip(false),
-        children: [
-          _jsxs("div", {
-            style: {
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              padding: "6px 14px",
-              borderRadius: 20,
-              background: `${config.color}22`,
-              border: `1px solid ${config.color}55`,
-              cursor: "default",
-              ...(config.pulse ? { animation: "pulse 1.5s infinite" } : {}),
-            },
-            children: [
-              _jsx("div", {
-                style: {
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: config.color,
-                  flexShrink: 0,
-                  ...(config.pulse ? { boxShadow: `0 0 8px ${config.color}`, animation: "pulse 1.5s infinite" } : {}),
-                },
-              }),
-              _jsx("span", { style: { color: config.color, fontWeight: 800, fontSize: 12, letterSpacing: "0.06em" }, children: config.label }),
-              _jsx("span", { style: { color: C.textMuted, fontSize: 10 }, children: "regime" }),
-            ],
-          }),
-          showTooltip && _jsx("div", {
-            style: {
-              position: "absolute",
-              top: "calc(100% + 8px)",
-              left: 0,
-              zIndex: 100,
-              background: "#0d1424",
-              border: `1px solid ${C.border}`,
-              borderRadius: 8,
-              padding: "10px 14px",
-              width: 280,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-            },
-            children: _jsx("p", { style: { color: C.textSecondary, fontSize: 12, margin: 0, lineHeight: 1.6 }, children: "Current regime affects which strategies are active. " + description }),
-          }),
-        ],
-      }),
-      // Active strategies
-      strategies && _jsxs("div", { style: { fontSize: 11, color: C.textMuted }, children: [
-        _jsx("span", { style: { color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", fontSize: 10 }, children: "Active strategies: " }),
-        _jsx("span", { style: { color: C.textSecondary }, children: strategies }),
-      ] }),
-      // Beginner description
-      isBeginner && _jsx("div", {
-        style: { padding: "8px 12px", background: `${C.blue}0d`, border: `1px solid ${C.blue}22`, borderRadius: 8, fontSize: 11, color: C.textSecondary, maxWidth: 260 },
-        children: description,
-      }),
-    ],
-  });
-}
 function SocialSentimentWidget() {
     const [tickers, setTickers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -387,12 +285,18 @@ export function Overview() {
         }
     }
     const historicalAnalog = regime?.historicalAnalog ?? regime?.similarPeriod ?? null;
-    return (_jsxs("div", { style: { padding: 28, maxWidth: 1400 }, children: [_jsxs("div", { style: { marginBottom: 28 }, children: [_jsx("h1", { style: { fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }, children: "Overview" }), _jsxs("p", { style: { color: C.textMuted, marginTop: 5, fontSize: 13 }, children: ["Real-time crash probability dashboard", lastUpdated && (_jsxs("span", { style: { marginLeft: 12, color: "#2a3a50" }, children: ["Last updated ", secondsAgo < 5 ? "just now" : `${secondsAgo}s ago`] }))] })] }), dashError && _jsx(ErrorBanner, { message: `Dashboard data unavailable: ${dashError}`, onRetry: load }), loading && !dashboard && (_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 20 }, children: [_jsx(SkeletonBlock, { height: 200 }), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }, children: [_jsx(SkeletonBlock, { height: 140 }), _jsx(SkeletonBlock, { height: 140 }), _jsx(SkeletonBlock, { height: 140 })] }), _jsx(SkeletonBlock, { height: 320 })] })), dashboard && (_jsxs(_Fragment, { children: [isBeginner && globalScore && (_jsx(BeginnerSummaryCard, { score: Number(globalScore.crashScore) })), isProfessional && (_jsx(ProDenseGrid, { scores: dashboard.scores ?? [], indicators: indicators })), globalScore && (_jsxs("div", { style: { marginBottom: 32 }, children: [_jsx(SectionTitle, { info: "The Crash Probability Score aggregates 12 market indicators weighted by historical predictive power.", children: "Global Crash Score" }), _jsxs(Card, { style: { display: "flex", alignItems: "center", gap: 48, flexWrap: "wrap" }, children: [_jsxs("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }, children: [_jsx(CrashScoreGauge, { score: Number(globalScore.crashScore), size: 280 }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 5, marginTop: -8 }, children: [_jsx("div", { style: {
+    return (_jsxs("div", { style: { padding: 28, maxWidth: 1400 }, children: [_jsxs("div", { style: { marginBottom: 28, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }, children: [_jsxs("div", { children: [_jsx("h1", { style: { fontSize: 24, fontWeight: 700, color: C.textPrimary, margin: 0 }, children: "Overview" }), _jsxs("p", { style: { color: C.textMuted, marginTop: 5, fontSize: 13 }, children: ["Real-time crash probability dashboard", lastUpdated && (_jsxs("span", { style: { marginLeft: 12, color: "#2a3a50" }, children: ["Last updated ", secondsAgo < 5 ? "just now" : `${secondsAgo}s ago`] }))] })] }), _jsx(ReportExport, { data: {
+                            globalScore: globalScore ? Number(globalScore.crashScore) : undefined,
+                            regime: typeof regime?.regime === "string" ? regime.regime : undefined,
+                            scores: dashboard?.scores ?? [],
+                            indicators: indicators ?? [],
+                            signals: latestSignals ?? [],
+                        } })] }), dashError && _jsx(ErrorBanner, { message: `Dashboard data unavailable: ${dashError}`, onRetry: load }), loading && !dashboard && (_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 20 }, children: [_jsx(SkeletonBlock, { height: 200 }), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }, children: [_jsx(SkeletonBlock, { height: 140 }), _jsx(SkeletonBlock, { height: 140 }), _jsx(SkeletonBlock, { height: 140 })] }), _jsx(SkeletonBlock, { height: 320 })] })), dashboard && (_jsxs(_Fragment, { children: [isBeginner && globalScore && (_jsx(BeginnerSummaryCard, { score: Number(globalScore.crashScore) })), isProfessional && (_jsx(ProDenseGrid, { scores: dashboard.scores ?? [], indicators: indicators })), globalScore && (_jsxs("div", { style: { marginBottom: 32 }, children: [_jsx(SectionTitle, { info: "The Crash Probability Score aggregates 12 market indicators weighted by historical predictive power.", children: "Global Crash Score" }), _jsxs(Card, { style: { display: "flex", alignItems: "center", gap: 48, flexWrap: "wrap" }, children: [_jsxs("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }, children: [_jsx(CrashScoreGauge, { score: Number(globalScore.crashScore), size: 280 }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 5, marginTop: -8 }, children: [_jsx("div", { style: {
                                                             width: 6, height: 6, borderRadius: "50%",
                                                             background: C.green,
                                                             boxShadow: `0 0 8px ${C.green}`,
                                                             animation: "pulse 2s infinite",
-                                                        } }), _jsx("span", { style: { color: C.textMuted, fontSize: 11 }, children: "Live \u00B7 updates every 60s" })] }), (dashboard.currentRegime || regimeByMarket.global) && _jsx(RegimeBadge, { regime: dashboard.currentRegime ?? regimeByMarket.global, activeStrategies: dashboard.activeStrategies })] }), _jsxs("div", { style: { flex: 1, minWidth: 220 }, children: [globalScore.componentScores && (_jsxs("div", { children: [_jsx("div", { style: {
+                                                        } }), _jsx("span", { style: { color: C.textMuted, fontSize: 11 }, children: "Live \u00B7 updates every 60s" })] })] }), _jsxs("div", { style: { flex: 1, minWidth: 220 }, children: [globalScore.componentScores && (_jsxs("div", { children: [_jsx("div", { style: {
                                                             color: C.textMuted,
                                                             fontSize: 11,
                                                             fontWeight: 600,
@@ -417,7 +321,7 @@ export function Overview() {
                                                     borderRadius: 8,
                                                     fontSize: 12,
                                                     color: C.textSecondary,
-                                                }, children: "\uD83D\uDCDA The crash score combines volatility, sentiment, macro indicators, and credit conditions. Higher = more danger." }))] })] })] })), _jsxs("div", { style: { marginBottom: 32 }, children: [_jsx(SectionTitle, { info: "Per-market crash probability scores. Click a card to see component breakdown.", children: "Markets" }), _jsx(MarketGrid, { scores: dashboard.scores, regimeByMarket: regimeByMarket })] }), _jsxs("div", { style: { marginBottom: 32 }, children: [_jsx(SectionTitle, { info: "Which sectors are leading or lagging. Green = outperforming, red = underperforming. Click a tile to open Yahoo Finance.", children: "Sector Rotation" }), _jsx(SectorHeatmap, {})] }), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20, marginBottom: 32 }, children: [_jsxs(Card, { style: { padding: "16px 18px" }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }, children: [_jsx("span", { style: { color: C.textSecondary, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }, children: "\uD83D\uDCC8 Latest Signals" }), _jsxs("span", { style: { color: C.textMuted, fontSize: 11 }, children: [latestSignals.length, " active"] })] }), latestSignals.length === 0 ? (_jsx("div", { style: { color: C.textMuted, fontSize: 12 }, children: "No active signals" })) : (_jsx("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: latestSignals.map((sig) => {
+                                                }, children: "\uD83D\uDCDA The crash score combines volatility, sentiment, macro indicators, and credit conditions. Higher = more danger." }))] })] })] })), _jsxs("div", { style: { marginBottom: 32 }, children: [_jsx(SectionTitle, { info: "Per-market crash probability scores. Click a card to see component breakdown.", children: "Markets" }), _jsx(MarketGrid, { scores: dashboard.scores, regimeByMarket: regimeByMarket })] }), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20, marginBottom: 32 }, children: [_jsxs(Card, { style: { padding: "16px 18px" }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }, children: [_jsx("span", { style: { color: C.textSecondary, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }, children: "\uD83D\uDCC8 Latest Signals" }), _jsxs("span", { style: { color: C.textMuted, fontSize: 11 }, children: [latestSignals.length, " active"] })] }), latestSignals.length === 0 ? (_jsx("div", { style: { color: C.textMuted, fontSize: 12 }, children: "No active signals" })) : (_jsx("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: latestSignals.map((sig) => {
                                             const isLong = ["BUY", "LONG"].includes((sig.action ?? "").toUpperCase());
                                             const dirColor = isLong ? C.green : C.red;
                                             const confidence = sig.confidence ?? sig.strength ?? 0;

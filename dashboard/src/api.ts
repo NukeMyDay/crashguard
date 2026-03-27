@@ -132,3 +132,21 @@ export function getMomentum(top = 30) {
 export function getRebalanceAdvice() {
   return fetchJSON<any>("/portfolio/rebalance-advice");
 }
+
+export function getSystemHealth() {
+  return fetchJSON<any>("/system/health");
+}
+
+export function search(q: string) {
+  return fetchJSON<any[]>(`/search?q=${encodeURIComponent(q)}`);
+}
+
+// Simple 30-second in-memory cache for repeated API calls
+const _cache = new Map<string, { data: any; ts: number }>();
+export async function cachedFetch<T>(path: string, ttlMs = 30_000): Promise<T> {
+  const cached = _cache.get(path);
+  if (cached && Date.now() - cached.ts < ttlMs) return cached.data as T;
+  const data = await fetchJSON<T>(path);
+  _cache.set(path, { data, ts: Date.now() });
+  return data;
+}

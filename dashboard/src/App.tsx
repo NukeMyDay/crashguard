@@ -1,16 +1,29 @@
-import { useEffect, useState } from "react";
-import { Overview } from "./pages/Overview.js";
-import { Signals } from "./pages/Signals.js";
-import { Scanner } from "./pages/Scanner.js";
-import { Strategies } from "./pages/Strategies.js";
-import { Portfolio } from "./pages/Portfolio.js";
-import { History } from "./pages/History.js";
-import { News } from "./pages/News.js";
-import { Watchlist } from "./pages/Watchlist.js";
-import { Settings } from "./pages/Settings.js";
-import { Backtest } from "./pages/Backtest.js";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { ExpertiseLevelProvider, useExpertise, C } from "./context.js";
 import { ChatPanel } from "./components/ChatPanel.js";
+import { CommandPalette } from "./components/CommandPalette.js";
+import { KeyboardHelp } from "./components/KeyboardHelp.js";
+import { SystemStatusBar } from "./components/SystemStatusBar.js";
+
+// Lazy-loaded pages for better initial load performance
+const Overview = lazy(() => import("./pages/Overview.js").then((m) => ({ default: m.Overview })));
+const Signals = lazy(() => import("./pages/Signals.js").then((m) => ({ default: m.Signals })));
+const Scanner = lazy(() => import("./pages/Scanner.js").then((m) => ({ default: m.Scanner })));
+const Strategies = lazy(() => import("./pages/Strategies.js").then((m) => ({ default: m.Strategies })));
+const Portfolio = lazy(() => import("./pages/Portfolio.js").then((m) => ({ default: m.Portfolio })));
+const History = lazy(() => import("./pages/History.js").then((m) => ({ default: m.History })));
+const News = lazy(() => import("./pages/News.js").then((m) => ({ default: m.News })));
+const Watchlist = lazy(() => import("./pages/Watchlist.js").then((m) => ({ default: m.Watchlist })));
+const Settings = lazy(() => import("./pages/Settings.js").then((m) => ({ default: m.Settings })));
+const Backtest = lazy(() => import("./pages/Backtest.js").then((m) => ({ default: m.Backtest })));
+
+function PageLoadingFallback() {
+  return (
+    <div style={{ padding: 40, display: "flex", justifyContent: "center", alignItems: "center", color: C.textMuted, fontSize: 13 }}>
+      Loading…
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Hash-based routing
@@ -24,7 +37,10 @@ function getHashRoute(): Route {
   return valid.includes(hash as Route) ? (hash as Route) : "/";
 }
 
-function useHashRoute(): [Route, (r: Route) => void] {
+function useHashRoute(
+  setCommandPaletteOpen: (v: boolean) => void,
+  setKeyboardHelpOpen: (v: boolean) => void,
+): [Route, (r: Route) => void] {
   const [route, setRoute] = useState<Route>(getHashRoute);
 
   useEffect(() => {
@@ -35,19 +51,58 @@ function useHashRoute(): [Route, (r: Route) => void] {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  // Keyboard shortcuts: 1–7
+  // Global keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+      // Ctrl+K / Cmd+K — command palette
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
+
+      if (inInput) return;
+
       const routes: Route[] = ["/", "/signals", "/scanner", "/strategies", "/portfolio", "/watchlist", "/history", "/news", "/settings", "/backtest"];
+
+      // 1–9,0 — navigate pages
       const idx = parseInt(e.key) - 1;
       if (idx >= 0 && idx < routes.length) {
         navigate(routes[idx]);
+        return;
+      }
+
+      switch (e.key) {
+        case "/":
+          e.preventDefault();
+          setCommandPaletteOpen(true);
+          break;
+        case "?":
+          setKeyboardHelpOpen(true);
+          break;
+        case "r":
+        case "R":
+          window.location.reload();
+          break;
+        case "p":
+        case "P":
+          window.print();
+          break;
+        case "s":
+        case "S": {
+          try {
+            const current = localStorage.getItem("mp_sound_alerts");
+            localStorage.setItem("mp_sound_alerts", current === "false" ? "true" : "false");
+          } catch {}
+          break;
+        }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [setCommandPaletteOpen, setKeyboardHelpOpen]);
 
   function navigate(r: Route) {
     window.location.hash = r;
@@ -363,7 +418,7 @@ function Sidebar({ route, navigate }: { route: Route; navigate: (r: Route) => vo
 // Top header
 // ---------------------------------------------------------------------------
 
-function TopHeader({ route }: { route: Route }) {
+function TopHeader({ route, onHelpOpen }: { route: Route; onHelpOpen: () => void }) {
   const pageLabels: Record<Route, string> = {
     "/": "Overview",
     "/signals": "Signals",
@@ -402,6 +457,28 @@ function TopHeader({ route }: { route: Route }) {
         <MarketStatusBar />
         <AutoRefreshIndicator />
         <ExpertiseLevelSelector />
+        {/* Keyboard help button */}
+        <button
+          onClick={onHelpOpen}
+          title="Keyboard shortcuts (?)"
+          style={{
+            background: "#1e293b",
+            border: `1px solid ${C.border}`,
+            borderRadius: 6,
+            color: C.textMuted,
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 700,
+            width: 26,
+            height: 26,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          ?
+        </button>
       </div>
     </div>
   );
@@ -412,30 +489,21 @@ function TopHeader({ route }: { route: Route }) {
 // ---------------------------------------------------------------------------
 
 function PageContent({ route }: { route: Route }) {
+  let page;
   switch (route) {
-    case "/":
-      return <Overview />;
-    case "/signals":
-      return <Signals />;
-    case "/scanner":
-      return <Scanner />;
-    case "/strategies":
-      return <Strategies />;
-    case "/portfolio":
-      return <Portfolio />;
-    case "/watchlist":
-      return <Watchlist />;
-    case "/history":
-      return <History />;
-    case "/news":
-      return <News />;
-    case "/backtest":
-      return <Backtest />;
-    case "/settings":
-      return <Settings />;
-    default:
-      return <Overview />;
+    case "/":          page = <Overview />;    break;
+    case "/signals":   page = <Signals />;     break;
+    case "/scanner":   page = <Scanner />;     break;
+    case "/strategies": page = <Strategies />; break;
+    case "/portfolio": page = <Portfolio />;   break;
+    case "/watchlist": page = <Watchlist />;   break;
+    case "/history":   page = <History />;     break;
+    case "/news":      page = <News />;        break;
+    case "/backtest":  page = <Backtest />;    break;
+    case "/settings":  page = <Settings />;    break;
+    default:           page = <Overview />;    break;
   }
+  return <Suspense fallback={<PageLoadingFallback />}>{page}</Suspense>;
 }
 
 // ---------------------------------------------------------------------------
@@ -443,7 +511,9 @@ function PageContent({ route }: { route: Route }) {
 // ---------------------------------------------------------------------------
 
 function AppInner() {
-  const [route, navigate] = useHashRoute();
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
+  const [route, navigate] = useHashRoute(setCommandPaletteOpen, setKeyboardHelpOpen);
 
   return (
     <div
@@ -457,11 +527,15 @@ function AppInner() {
     >
       <Sidebar route={route} navigate={navigate} />
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <TopHeader route={route} />
+        <TopHeader route={route} onHelpOpen={() => setKeyboardHelpOpen(true)} />
         <main style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
           <PageContent route={route} />
         </main>
+        <SystemStatusBar />
       </div>
+
+      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
+      <KeyboardHelp open={keyboardHelpOpen} onClose={() => setKeyboardHelpOpen(false)} />
     </div>
   );
 }

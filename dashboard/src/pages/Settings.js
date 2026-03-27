@@ -2,7 +2,6 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect } from "react";
 import { C, useExpertise } from "../context.js";
 import { fetchJSON, getWebhooks, addWebhook, deleteWebhook, testWebhookUrl } from "../api.js";
-import { resetTour } from "../components/OnboardingTour.js";
 function WebhookSection() {
     const [webhooks, setWebhooks] = useState([]);
     const [loadingHooks, setLoadingHooks] = useState(true);
@@ -155,6 +154,22 @@ export function Settings() {
     const { level, setLevel } = useExpertise();
     const [settings, setSettings] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [soundEnabled, setSoundEnabled] = useState(() => {
+        try {
+            return localStorage.getItem("mp_sound_alerts") !== "false";
+        }
+        catch {
+            return true;
+        }
+    });
+    function toggleSound() {
+        const next = !soundEnabled;
+        setSoundEnabled(next);
+        try {
+            localStorage.setItem("mp_sound_alerts", next ? "true" : "false");
+        }
+        catch { }
+    }
     // API key form
     const [keyInput, setKeyInput] = useState("");
     const [saving, setSaving] = useState(false);
@@ -284,6 +299,27 @@ export function Settings() {
                     border: `1px solid ${C.border}`,
                     borderRadius: 12,
                     padding: 24,
+                    marginBottom: 16,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 16,
+                }, children: [_jsxs("div", { children: [_jsxs("div", { style: { color: C.textPrimary, fontWeight: 600, fontSize: 15, marginBottom: 4 }, children: [soundEnabled ? "🔔" : "🔕", " Sound Alerts"] }), _jsxs("div", { style: { color: C.textMuted, fontSize: 12 }, children: ["Play audio when crash score crosses critical thresholds (Warning 50, Critical 75, Extreme 90). Requires first user interaction. Toggle with ", _jsx("strong", { style: { color: C.textSecondary }, children: "S" }), " key."] })] }), _jsx("button", { onClick: toggleSound, style: {
+                            padding: "8px 18px",
+                            borderRadius: 8,
+                            border: `1px solid ${soundEnabled ? C.green + "66" : C.border}`,
+                            background: soundEnabled ? `${C.green}18` : "#1e293b",
+                            color: soundEnabled ? C.green : C.textMuted,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            flexShrink: 0,
+                            transition: "all 0.15s",
+                        }, children: soundEnabled ? "On" : "Off" })] }), _jsxs("div", { style: {
+                    background: C.card,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 12,
+                    padding: 24,
                 }, children: [_jsxs("div", { style: {
                             display: "flex",
                             alignItems: "center",
@@ -374,31 +410,7 @@ export function Settings() {
                                     padding: "1px 5px",
                                     borderRadius: 4,
                                     fontFamily: "monospace",
-                                }, children: "ENCRYPTION_SECRET" }), " ", "on the server. Set this env var in production for maximum security."] })] }), _jsx(WebhookSection, {}), _jsxs("div", { style: {
-                    marginTop: 16,
-                    background: C.card,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 12,
-                    padding: 24,
-                }, children: [
-                    _jsx("div", { style: { color: C.textPrimary, fontWeight: 600, fontSize: 15, marginBottom: 4 }, children: "Onboarding Tour" }),
-                    _jsx("div", { style: { color: C.textMuted, fontSize: 12, marginBottom: 16 }, children: "Re-run the guided tour to learn about each dashboard feature." }),
-                    _jsx("button", {
-                        onClick: () => { resetTour(); window.location.hash = "/"; window.location.reload(); },
-                        style: {
-                            padding: "9px 18px",
-                            borderRadius: 8,
-                            border: `1px solid ${C.blue}55`,
-                            background: `${C.blue}11`,
-                            color: C.blue,
-                            fontSize: 13,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            transition: "all 0.15s",
-                        },
-                        children: "🗺️ Take the Tour",
-                    }),
-                ] })] }));
+                                }, children: "ENCRYPTION_SECRET" }), " ", "on the server. Set this env var in production for maximum security."] })] }), _jsx(WebhookSection, {})] }));
 }
 // ─── Status badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ loading, configured, }) {

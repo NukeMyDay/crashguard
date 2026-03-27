@@ -5,11 +5,18 @@ import { eq, desc, and, gte } from "drizzle-orm";
 
 export const indicatorsRouter = new Hono();
 
+function isStale(lastRecordedAt: Date, frequency: string): boolean {
+  const ageMin = (Date.now() - lastRecordedAt.getTime()) / 60000;
+  if (frequency === "hourly") return ageMin > 90;
+  if (frequency === "daily") return ageMin > 26 * 60;
+  if (frequency === "weekly") return ageMin > 8 * 24 * 60;
+  return false;
+}
+
 // GET /v1/indicators
 indicatorsRouter.get("/", async (c) => {
   const rows = await db.select().from(indicators).where(eq(indicators.isActive, true));
 
-  // Attach latest value to each indicator
   const withLatest = await Promise.all(
     rows.map(async (ind) => {
       const latest = await db
@@ -18,7 +25,28 @@ indicatorsRouter.get("/", async (c) => {
         .where(eq(indicatorValues.indicatorId, ind.id))
         .orderBy(desc(indicatorValues.recordedAt))
         .limit(1);
-      return { ...ind, latestValue: latest[0] ?? null };
+
+      const latestValue = latest[0] ?? null;
+      let dataAge: {
+        minutes: number;
+        isStale: boolean;
+        expectedFrequency: string;
+        lastRecordedAt: string | null;
+      } | null = null;
+
+      if (latestValue) {
+        const ageMin = Math.round(
+          (Date.now() - new Date(latestValue.recordedAt).getTime()) / 60000
+        );
+        dataAge = {
+          minutes: ageMin,
+          isStale: isStale(new Date(latestValue.recordedAt), ind.frequency),
+          expectedFrequency: ind.frequency,
+          lastRecordedAt: new Date(latestValue.recordedAt).toISOString(),
+        };
+      }
+
+      return { ...ind, latestValue, dataAge };
     })
   );
 

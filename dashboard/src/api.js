@@ -95,12 +95,6 @@ export function testWebhookUrl(url) {
         body: JSON.stringify({ url }),
     });
 }
-export function getDarkPool(date = "latest") {
-    return fetchJSON(`/dark-pool?date=${encodeURIComponent(date)}`);
-}
-export function getPortfolioAnalytics() {
-    return fetchJSON("/portfolio/analytics");
-}
 export function getSignalAccuracy() {
     return fetchJSON("/signals/accuracy");
 }
@@ -109,4 +103,20 @@ export function getMomentum(top = 30) {
 }
 export function getRebalanceAdvice() {
     return fetchJSON("/portfolio/rebalance-advice");
+}
+export function getSystemHealth() {
+    return fetchJSON("/system/health");
+}
+export function search(q) {
+    return fetchJSON(`/search?q=${encodeURIComponent(q)}`);
+}
+// Simple 30-second in-memory cache for repeated API calls
+const _cache = new Map();
+export async function cachedFetch(path, ttlMs = 30000) {
+    const cached = _cache.get(path);
+    if (cached && Date.now() - cached.ts < ttlMs)
+        return cached.data;
+    const data = await fetchJSON(path);
+    _cache.set(path, { data, ts: Date.now() });
+    return data;
 }

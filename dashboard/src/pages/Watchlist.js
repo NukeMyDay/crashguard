@@ -38,8 +38,26 @@ export function Watchlist() {
     }
     useEffect(() => {
         loadWatchlist();
-        const interval = setInterval(loadWatchlist, 60000);
-        return () => clearInterval(interval);
+        let interval = setInterval(loadWatchlist, 60000);
+        function handleVisibilityChange() {
+            if (document.hidden) {
+                if (interval) {
+                    clearInterval(interval);
+                    interval = null;
+                }
+            }
+            else {
+                loadWatchlist();
+                if (!interval)
+                    interval = setInterval(loadWatchlist, 60000);
+            }
+        }
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        return () => {
+            if (interval)
+                clearInterval(interval);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
     }, []);
     async function addTicker() {
         const t = newTicker.trim().toUpperCase();

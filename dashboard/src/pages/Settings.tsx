@@ -260,6 +260,15 @@ export function Settings() {
   const { level, setLevel } = useExpertise();
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem("mp_sound_alerts") !== "false"; } catch { return true; }
+  });
+
+  function toggleSound() {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    try { localStorage.setItem("mp_sound_alerts", next ? "true" : "false"); } catch {}
+  }
 
   // API key form
   const [keyInput, setKeyInput] = useState("");
@@ -438,6 +447,48 @@ export function Settings() {
             );
           })}
         </div>
+      </div>
+
+      {/* Sound Alerts */}
+      <div
+        style={{
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: 24,
+          marginBottom: 16,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
+        <div>
+          <div style={{ color: C.textPrimary, fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
+            {soundEnabled ? "🔔" : "🔕"} Sound Alerts
+          </div>
+          <div style={{ color: C.textMuted, fontSize: 12 }}>
+            Play audio when crash score crosses critical thresholds (Warning 50, Critical 75, Extreme 90).
+            Requires first user interaction. Toggle with <strong style={{ color: C.textSecondary }}>S</strong> key.
+          </div>
+        </div>
+        <button
+          onClick={toggleSound}
+          style={{
+            padding: "8px 18px",
+            borderRadius: 8,
+            border: `1px solid ${soundEnabled ? C.green + "66" : C.border}`,
+            background: soundEnabled ? `${C.green}18` : "#1e293b",
+            color: soundEnabled ? C.green : C.textMuted,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            flexShrink: 0,
+            transition: "all 0.15s",
+          }}
+        >
+          {soundEnabled ? "On" : "Off"}
+        </button>
       </div>
 
       {/* Anthropic API Key card */}

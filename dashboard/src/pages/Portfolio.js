@@ -1,155 +1,8 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useState } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, } from "recharts";
-import { getPortfolio, getPortfolioPerformance, executeTrade, getStressTest } from "../api.js";
+import { getPortfolio, getPortfolioPerformance, executeTrade, getStressTest, getRebalanceAdvice } from "../api.js";
 import { C, Card, SectionTitle, EmptyState, ErrorBanner, SkeletonBlock, useBeginnerMode, TH, TD, } from "../context.js";
-
-// ---------------------------------------------------------------------------
-// Performance Analytics section
-// ---------------------------------------------------------------------------
-function PerformanceAnalytics({ portfolio }) {
-    const { beginnerMode } = useBeginnerMode();
-    const [analytics, setAnalytics] = useState(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        async function load() {
-            try {
-                // Try dedicated analytics endpoint first, fall back to performance endpoint
-                let data = null;
-                try {
-                    const res = await fetch("/v1/portfolio/analytics");
-                    if (res.ok) data = await res.json();
-                } catch { /* ignore */ }
-                if (!data || data.sharpeRatio == null) {
-                    const res2 = await fetch("/v1/portfolio/performance");
-                    if (res2.ok) {
-                        const perf = await res2.json();
-                        // The performance endpoint may return analytics fields at root
-                        if (perf && perf.sharpeRatio != null) data = perf;
-                        // Or nested under 'analytics'
-                        else if (perf?.analytics) data = perf.analytics;
-                    }
-                }
-                setAnalytics(data);
-            } catch { setAnalytics(null); }
-            finally { setLoading(false); }
-        }
-        load();
-    }, []);
-
-    // Build closed-trade bar chart data from portfolio.trades
-    const closedTrades = (portfolio?.trades ?? [])
-        .filter((t) => t.action?.toUpperCase() === "SELL" && t.returnPct != null)
-        .slice(-20)
-        .map((t, i) => ({
-            i,
-            label: t.instrument ?? "",
-            ret: Number(t.returnPct ?? 0),
-            win: Number(t.returnPct ?? 0) >= 0,
-        }));
-
-    const sharpe = analytics?.sharpeRatio ?? analytics?.sharpe ?? null;
-    const winRate = analytics?.winRate ?? null;
-    const avgReturn = analytics?.avgReturnPerTrade ?? analytics?.avgReturn ?? null;
-    const maxDrawdown = analytics?.maxDrawdown ?? null;
-    const bestTrade = analytics?.bestTrade ?? null;
-    const worstTrade = analytics?.worstTrade ?? null;
-
-    // Derive simple metrics from portfolio.trades if analytics not available
-    const derivedMetrics = (() => {
-        const trades = (portfolio?.trades ?? []).filter((t) => t.action?.toUpperCase() === "SELL" && t.returnPct != null);
-        if (!trades.length) return null;
-        const wins = trades.filter((t) => Number(t.returnPct) >= 0);
-        const wr = (wins.length / trades.length) * 100;
-        const avg = trades.reduce((s, t) => s + Number(t.returnPct), 0) / trades.length;
-        const sorted = [...trades].sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
-        return { winRate: wr, avgReturn: avg, best: sorted[0], worst: sorted[sorted.length - 1] };
-    })();
-
-    const displayWinRate = winRate ?? derivedMetrics?.winRate ?? null;
-    const displayAvgReturn = avgReturn ?? derivedMetrics?.avgReturn ?? null;
-    const displayBest = bestTrade ?? (derivedMetrics?.best ? { instrument: derivedMetrics.best.instrument, returnPct: derivedMetrics.best.returnPct } : null);
-    const displayWorst = worstTrade ?? (derivedMetrics?.worst ? { instrument: derivedMetrics.worst.instrument, returnPct: derivedMetrics.worst.returnPct } : null);
-
-    const hasAnyData = sharpe != null || displayWinRate != null || displayAvgReturn != null || maxDrawdown != null;
-
-    if (loading) return _jsx(SkeletonBlock, { height: 140 });
-    if (!hasAnyData && closedTrades.length === 0) return null;
-
-    const sharpeColor = sharpe == null ? C.textMuted : sharpe >= 1.0 ? C.green : sharpe >= 0 ? C.amber : C.red;
-
-    return _jsxs("div", { style: { marginBottom: 28 }, children: [
-        _jsx(SectionTitle, { children: "Performance Analytics" }),
-        beginnerMode && _jsxs("div", { style: { padding: "10px 14px", background: `${C.blue}0d`, border: `1px solid ${C.blue}22`, borderRadius: 8, fontSize: 12, color: C.textSecondary, marginBottom: 16 }, children: [
-            "📚 ", _jsx("strong", { children: "Sharpe Ratio:" }), " A Sharpe ratio above 1.0 means good risk-adjusted returns. Above 2.0 is excellent. Negative means you'd have been better off in a savings account."
-        ] }),
-        // 4 metric cards
-        _jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }, children: [
-            _jsxs(Card, { style: { padding: "14px 18px" }, children: [
-                _jsx("div", { style: { color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }, children: "Sharpe Ratio (30d)" }),
-                _jsx("div", { style: { color: sharpeColor, fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums" }, children: sharpe != null ? sharpe.toFixed(2) : "—" }),
-                beginnerMode && sharpe != null && _jsx("div", { style: { color: C.textMuted, fontSize: 11, marginTop: 4 }, children: sharpe >= 1 ? "Good risk-adjusted return" : sharpe >= 0 ? "Below average" : "Poor risk-adjusted return" }),
-            ] }),
-            _jsxs(Card, { style: { padding: "14px 18px" }, children: [
-                _jsx("div", { style: { color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }, children: "Win Rate" }),
-                _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
-                    _jsx("div", { style: { color: displayWinRate != null && displayWinRate >= 50 ? C.green : C.red, fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums" }, children: displayWinRate != null ? `${displayWinRate.toFixed(1)}%` : "—" }),
-                    displayWinRate != null && _jsx("span", { style: { color: displayWinRate >= 50 ? C.green : C.red, background: `${displayWinRate >= 50 ? C.green : C.red}18`, border: `1px solid ${displayWinRate >= 50 ? C.green : C.red}44`, padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700 }, children: displayWinRate >= 50 ? "WINNING" : "LOSING" }),
-                ] }),
-            ] }),
-            _jsxs(Card, { style: { padding: "14px 18px" }, children: [
-                _jsx("div", { style: { color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }, children: "Avg Return/Trade" }),
-                _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
-                    _jsx("div", { style: { color: displayAvgReturn != null && displayAvgReturn >= 0 ? C.green : C.red, fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums" }, children: displayAvgReturn != null ? `${displayAvgReturn >= 0 ? "+" : ""}${displayAvgReturn.toFixed(2)}%` : "—" }),
-                    displayAvgReturn != null && _jsx("span", { style: { fontSize: 18 }, children: displayAvgReturn >= 0 ? "↑" : "↓" }),
-                ] }),
-            ] }),
-            _jsxs(Card, { style: { padding: "14px 18px" }, children: [
-                _jsx("div", { style: { color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }, children: "Max Drawdown" }),
-                _jsx("div", { style: { color: C.red, fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums" }, children: maxDrawdown != null ? `-${Math.abs(maxDrawdown).toFixed(2)}%` : "—" }),
-            ] }),
-        ] }),
-        // Mini bar chart of last 20 closed trades
-        closedTrades.length > 0 && _jsxs("div", { style: { marginBottom: 16 }, children: [
-            _jsx("div", { style: { color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }, children: "Last 20 Closed Trades" }),
-            _jsx(Card, { children: _jsx(ResponsiveContainer, { width: "100%", height: 120, children: _jsxs(BarChart, { data: closedTrades, margin: { top: 5, right: 5, bottom: 5, left: 0 }, barCategoryGap: "15%", children: [
-                _jsx(XAxis, { dataKey: "label", tick: { fill: C.textMuted, fontSize: 9 }, axisLine: false, tickLine: false }),
-                _jsx(YAxis, { tick: { fill: C.textMuted, fontSize: 9 }, axisLine: false, tickLine: false, width: 36, tickFormatter: (v) => `${v}%` }),
-                _jsx(Tooltip, { contentStyle: { background: "#1a2332", border: `1px solid ${C.border}`, fontSize: 11 }, formatter: (val) => [`${Number(val) >= 0 ? "+" : ""}${Number(val).toFixed(2)}%`, "Return"] }),
-                _jsx(Bar, { dataKey: "ret", radius: [3, 3, 0, 0], children: closedTrades.map((entry, i) => _jsx(Cell, { fill: entry.win ? C.green + "cc" : C.red + "cc" }, i)) }),
-            ] }) }) }),
-        ] }),
-        // Best / Worst trade callout cards
-        (displayBest || displayWorst) && _jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }, children: [
-            displayBest && _jsxs(Card, { style: { padding: "12px 16px", background: `${C.green}0d`, borderColor: `${C.green}33` }, children: [
-                _jsx("div", { style: { color: C.green, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }, children: "🏆 Best Trade" }),
-                _jsx("div", { style: { color: C.textPrimary, fontWeight: 700, fontSize: 15 }, children: displayBest.instrument ?? "—" }),
-                _jsxs("div", { style: { color: C.green, fontSize: 13, fontFamily: "monospace", fontWeight: 600 }, children: ["+", Number(displayBest.returnPct ?? 0).toFixed(2), "%"] }),
-            ] }),
-            displayWorst && _jsxs(Card, { style: { padding: "12px 16px", background: `${C.red}0d`, borderColor: `${C.red}33` }, children: [
-                _jsx("div", { style: { color: C.red, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }, children: "📉 Worst Trade" }),
-                _jsx("div", { style: { color: C.textPrimary, fontWeight: 700, fontSize: 15 }, children: displayWorst.instrument ?? "—" }),
-                _jsxs("div", { style: { color: C.red, fontSize: 13, fontFamily: "monospace", fontWeight: 600 }, children: [Number(displayWorst.returnPct ?? 0) >= 0 ? "+" : "", Number(displayWorst.returnPct ?? 0).toFixed(2), "%"] }),
-            ] }),
-        ] }),
-        // Professional mode: full stats table
-        !beginnerMode && analytics && _jsxs("div", { style: { marginTop: 16 }, children: [
-            _jsx("div", { style: { color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }, children: "Full Stats" }),
-            _jsx("div", { style: { background: C.card, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }, children:
-                _jsx("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12 }, children:
-                    _jsx("tbody", { children: Object.entries(analytics)
-                        .filter(([k]) => !["bestTrade", "worstTrade"].includes(k))
-                        .map(([k, v]) => _jsxs("tr", { children: [
-                            _jsx("td", { style: { ...TH, textAlign: "left", fontWeight: 500, width: "50%" }, children: k.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase()) }),
-                            _jsx("td", { style: { ...TD, fontFamily: "monospace" }, children: typeof v === "number" ? v.toFixed(3) : String(v) }),
-                        ] }, k))
-                    })
-                })
-            }),
-        ] }),
-    ] });
-}
 const STRESS_SCENARIOS = [
     { id: "drop20", label: "Drop 20%" },
     { id: "drop40", label: "Drop 40%" },
@@ -358,6 +211,60 @@ function TradeForm({ onTraded }) {
                     fontSize: 13,
                 }, children: status.msg }))] }));
 }
+function actionIcon(action) {
+    if (action === "increase")
+        return "↑";
+    if (action === "reduce")
+        return "↓";
+    return "✂";
+}
+function actionColor(action) {
+    if (action === "increase")
+        return "#22c55e";
+    if (action === "reduce")
+        return "#ef4444";
+    return "#f59e0b";
+}
+function RebalancingAdvisor() {
+    const { beginnerMode } = useBeginnerMode();
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [applied, setApplied] = useState(new Set());
+    function load() {
+        setLoading(true);
+        getRebalanceAdvice()
+            .then((d) => { setData(d); setError(null); })
+            .catch((e) => setError(String(e)))
+            .finally(() => setLoading(false));
+    }
+    useEffect(() => { load(); }, []);
+    const actions = data?.actions ?? [];
+    function applyDraft(ticker) {
+        // Paper-trading only: save draft adjustment to localStorage
+        const key = `rebalance_draft_${ticker}`;
+        const existing = actions.find((a) => a.ticker === ticker);
+        if (existing) {
+            localStorage.setItem(key, JSON.stringify({ ticker, suggestedWeight: existing.suggestedWeight, appliedAt: new Date().toISOString() }));
+            setApplied((prev) => new Set([...prev, ticker]));
+        }
+    }
+    return (_jsxs("div", { style: { marginBottom: 28 }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }, children: [_jsx(SectionTitle, { children: "Rebalancing Advice" }), _jsx("button", { onClick: load, style: { padding: "5px 14px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.textMuted, fontSize: 12, cursor: "pointer" }, children: "\u21BB Refresh" })] }), beginnerMode && (_jsx("div", { style: { padding: "10px 14px", background: `${C.blue}0d`, border: `1px solid ${C.blue}22`, borderRadius: 8, fontSize: 12, color: C.textSecondary, marginBottom: 12 }, children: "\uD83D\uDCDA Based on current market conditions, here is how to adjust your portfolio." })), loading && _jsx(SkeletonBlock, { height: 120 }), !loading && error && _jsx(ErrorBanner, { message: `Failed to load rebalancing advice: ${error}`, onRetry: load }), !loading && !error && actions.length === 0 && (_jsxs(Card, { style: { padding: "20px 24px", textAlign: "center" }, children: [_jsx("div", { style: { fontSize: 24, marginBottom: 8 }, children: "\u2705" }), _jsx("div", { style: { color: C.textSecondary, fontSize: 13 }, children: "Your portfolio looks well-positioned for the current regime." })] })), !loading && !error && actions.length > 0 && (_jsxs(_Fragment, { children: [data?.summary && (_jsxs("div", { style: { padding: "10px 14px", background: `${C.border}55`, borderRadius: 8, fontSize: 12, color: C.textSecondary, marginBottom: 12 }, children: [data.summary, data.estimatedSharpeImprovement != null && (_jsxs("span", { style: { color: C.green, fontWeight: 700, marginLeft: 8 }, children: ["+", data.estimatedSharpeImprovement.toFixed(2), " Sharpe"] }))] })), _jsx("div", { style: { display: "flex", flexDirection: "column", gap: 10 }, children: actions.map((a) => {
+                            const color = actionColor(a.action);
+                            const isApplied = applied.has(a.ticker);
+                            return (_jsx(Card, { style: { padding: "14px 18px", borderLeft: `3px solid ${color}` }, children: _jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [_jsx("span", { style: { fontSize: 20, color, lineHeight: 1 }, children: actionIcon(a.action) }), _jsxs("div", { children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [_jsx("span", { style: { color: C.textPrimary, fontWeight: 700, fontSize: 15 }, children: a.ticker }), _jsx("span", { style: { color, background: `${color}1a`, border: `1px solid ${color}44`, padding: "1px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, textTransform: "capitalize" }, children: a.action })] }), _jsxs("div", { style: { color: C.textMuted, fontSize: 12, marginTop: 3 }, children: [a.currentWeight.toFixed(1), "% \u2192 ", _jsxs("span", { style: { color: C.textSecondary, fontWeight: 600 }, children: [a.suggestedWeight.toFixed(1), "%"] }), _jsx("span", { style: { marginLeft: 8, color: C.textMuted }, children: a.reason })] })] })] }), _jsx("button", { onClick: () => applyDraft(a.ticker), disabled: isApplied, style: {
+                                                padding: "5px 14px",
+                                                borderRadius: 7,
+                                                border: `1px solid ${isApplied ? C.border : color + "66"}`,
+                                                background: isApplied ? "transparent" : `${color}18`,
+                                                color: isApplied ? C.textMuted : color,
+                                                fontSize: 12,
+                                                fontWeight: 600,
+                                                cursor: isApplied ? "default" : "pointer",
+                                                transition: "all 0.15s",
+                                            }, children: isApplied ? "✓ Applied (draft)" : "Apply" })] }) }, a.ticker));
+                        }) })] }))] }));
+}
 export function Portfolio() {
     const { beginnerMode } = useBeginnerMode();
     const [portfolio, setPortfolio] = useState(null);
@@ -415,7 +322,7 @@ export function Portfolio() {
                             fontSize: 12,
                             color: C.textSecondary,
                             marginBottom: 20,
-                        }, children: ["\uD83D\uDCDA ", _jsx("strong", { children: "Paper trading" }), " uses virtual money so you can practice without losing real funds. Your P&L shows how your picks would have performed if you had used real money."] })), _jsx(PerformanceAnalytics, { portfolio: portfolio }), _jsxs("div", { style: { marginBottom: 28 }, children: [_jsx(SectionTitle, { children: "Holdings" }), portfolio.holdings?.length > 0 ? (_jsx("div", { style: { background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }, children: _jsx("div", { style: { overflowX: "auto" }, children: _jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { style: TH, children: "Symbol" }), _jsx("th", { style: TH, children: "Qty" }), _jsx("th", { style: TH, children: "Entry Price" }), _jsx("th", { style: TH, children: "Current Price" }), _jsx("th", { style: TH, children: "P&L" }), portfolio.holdings.some((h) => h.weight != null) && (_jsx("th", { style: TH, children: "Weight %" }))] }) }), _jsx("tbody", { children: portfolio.holdings.map((h) => {
+                        }, children: ["\uD83D\uDCDA ", _jsx("strong", { children: "Paper trading" }), " uses virtual money so you can practice without losing real funds. Your P&L shows how your picks would have performed if you had used real money."] })), _jsx(RebalancingAdvisor, {}), _jsxs("div", { style: { marginBottom: 28 }, children: [_jsx(SectionTitle, { children: "Holdings" }), portfolio.holdings?.length > 0 ? (_jsx("div", { style: { background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }, children: _jsx("div", { style: { overflowX: "auto" }, children: _jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { style: TH, children: "Symbol" }), _jsx("th", { style: TH, children: "Qty" }), _jsx("th", { style: TH, children: "Entry Price" }), _jsx("th", { style: TH, children: "Current Price" }), _jsx("th", { style: TH, children: "P&L" }), portfolio.holdings.some((h) => h.weight != null) && (_jsx("th", { style: TH, children: "Weight %" }))] }) }), _jsx("tbody", { children: portfolio.holdings.map((h) => {
                                                     const pnlColor = h.pnl >= 0 ? C.green : C.red;
                                                     return (_jsxs("tr", { children: [_jsx("td", { style: { ...TD, color: C.textPrimary, fontWeight: 700, fontSize: 14 }, children: h.instrument }), _jsx("td", { style: { ...TD, fontVariantNumeric: "tabular-nums" }, children: fmt(h.quantity, 0) }), _jsx("td", { style: { ...TD, fontVariantNumeric: "tabular-nums" }, children: fmtUSD(h.avgPrice) }), _jsx("td", { style: { ...TD, fontVariantNumeric: "tabular-nums" }, children: fmtUSD(h.currentPrice) }), _jsxs("td", { style: TD, children: [_jsxs("div", { style: { color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }, children: [h.pnl >= 0 ? "+" : "", fmtUSD(h.pnl)] }), _jsxs("div", { style: { color: pnlColor, fontSize: 11, fontVariantNumeric: "tabular-nums" }, children: [h.pnlPct >= 0 ? "+" : "", fmt(h.pnlPct), "%"] })] }), portfolio.holdings.some((h2) => h2.weight != null) && (_jsx("td", { style: { ...TD, fontVariantNumeric: "tabular-nums" }, children: h.weight != null ? `${fmt(h.weight, 1)}%` : "—" }))] }, h.instrument));
                                                 }) })] }) }) })) : (_jsx(EmptyState, { icon: "\uD83D\uDCCA", title: "No open positions", subtitle: "Execute a trade below to open your first position." }))] }), perfChartData.length > 1 && (_jsxs("div", { style: { marginBottom: 28 }, children: [_jsx(SectionTitle, { children: "Performance vs S&P 500" }), _jsx(Card, { children: _jsx(ResponsiveContainer, { width: "100%", height: 300, children: _jsxs(LineChart, { data: perfChartData, margin: { top: 10, right: 10, bottom: 0, left: -10 }, children: [_jsx(CartesianGrid, { strokeDasharray: "3 3", stroke: "#1a2436", vertical: false }), _jsx(XAxis, { dataKey: "date", stroke: "#2a3a50", tick: { fill: C.textMuted, fontSize: 11 }, axisLine: false, tickLine: false, interval: "preserveStartEnd" }), _jsx(YAxis, { stroke: "#2a3a50", tick: { fill: C.textMuted, fontSize: 11 }, axisLine: false, tickLine: false, tickFormatter: (v) => `$${(v / 1000).toFixed(0)}k`, width: 42 }), _jsx(Tooltip, { contentStyle: { background: "#1a2332", border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 12 }, formatter: (val) => [fmtUSD(Number(val)), undefined] }), _jsx(Legend, { wrapperStyle: { color: C.textSecondary, fontSize: 12 } }), _jsx(Line, { type: "monotone", dataKey: "Portfolio", stroke: C.blue, dot: false, strokeWidth: 2 }), _jsx(Line, { type: "monotone", dataKey: "S&P 500", stroke: C.textMuted, dot: false, strokeWidth: 1.5, strokeDasharray: "5 3" })] }) }) })] })), _jsxs("div", { style: { marginBottom: 28 }, children: [_jsx(SectionTitle, { children: "Trade History" }), portfolio.trades?.length > 0 ? (_jsx("div", { style: { background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }, children: _jsx("div", { style: { overflowX: "auto" }, children: _jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { style: TH, children: "Date" }), _jsx("th", { style: TH, children: "Instrument" }), _jsx("th", { style: TH, children: "Action" }), _jsx("th", { style: TH, children: "Qty" }), _jsx("th", { style: TH, children: "Price" })] }) }), _jsx("tbody", { children: portfolio.trades.map((trade) => {

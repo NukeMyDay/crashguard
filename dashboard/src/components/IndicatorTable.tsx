@@ -7,6 +7,7 @@ interface Indicator {
   slug: string;
   category: string;
   source: string;
+  frequency?: string;
   weight: number;
   warningThreshold?: number;
   criticalThreshold?: number;
@@ -14,6 +15,11 @@ interface Indicator {
     value: number;
     normalizedValue: number;
     recordedAt?: string;
+  };
+  dataAge?: {
+    seconds: number;
+    isStale: boolean;
+    expectedFrequency?: string;
   };
 }
 
@@ -61,6 +67,97 @@ const BEGINNER_WHY_MATTERS: Record<string, string> = {
   "m2-money-supply": "Too much money growth can cause inflation and asset bubbles that eventually pop.",
   "fear-greed-index": "Extreme greed often precedes corrections. When everyone is confident, it's time to be careful.",
 };
+
+// ---------------------------------------------------------------------------
+// Data Freshness helpers
+// ---------------------------------------------------------------------------
+
+function formatRelativeTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+function getFreshnessColor(isStale: boolean, seconds: number): string {
+  if (isStale) return "#ef4444"; // red
+  if (seconds > 60 * 60) return "#f59e0b"; // amber — over 1h
+  if (seconds > 30 * 60) return "#eab308"; // yellow — over 30m
+  return "#10b981"; // green
+}
+
+function DataFreshnessCell({
+  indicator,
+  isProfessional,
+}: {
+  indicator: Indicator;
+  isProfessional: boolean;
+}) {
+  const lv = indicator.latestValue;
+  const da = indicator.dataAge;
+
+  // Compute age from recordedAt if dataAge not provided
+  let ageSeconds: number | null = null;
+  let isStale = false;
+
+  if (da) {
+    ageSeconds = da.seconds;
+    isStale = da.isStale;
+  } else if (lv?.recordedAt) {
+    ageSeconds = Math.floor((Date.now() - new Date(lv.recordedAt).getTime()) / 1000);
+    // Mark stale if older than 2 hours for hourly indicators
+    isStale = ageSeconds > 7200;
+  }
+
+  if (ageSeconds === null) {
+    return <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>;
+  }
+
+  const color = getFreshnessColor(isStale, ageSeconds);
+  const relative = formatRelativeTime(ageSeconds);
+  const isoTimestamp = lv?.recordedAt ? new Date(lv.recordedAt).toLocaleString() : null;
+  const expected = da?.expectedFrequency ?? indicator.frequency ?? "hourly";
+
+  const tooltip = isoTimestamp
+    ? `Last updated: ${isoTimestamp} | Expected: ${expected}`
+    : `Age: ${relative}`;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }} title={tooltip}>
+      <div
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: color,
+          flexShrink: 0,
+          boxShadow: !isStale ? `0 0 4px ${color}` : "none",
+        }}
+      />
+      <span style={{ color, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+        {isProfessional && isoTimestamp
+          ? new Date(lv!.recordedAt!).toLocaleTimeString()
+          : relative}
+      </span>
+      {isStale && (
+        <span
+          title="Data is stale"
+          style={{
+            fontSize: 10,
+            color: "#ef4444",
+            background: "#ef444422",
+            border: "1px solid #ef444455",
+            borderRadius: 4,
+            padding: "1px 4px",
+            fontWeight: 700,
+          }}
+        >
+          STALE
+        </span>
+      )}
+    </div>
+  );
+}
 
 function RiskScoreBar({ value }: { value: number }) {
   const color = getScoreColor(value);
@@ -138,6 +235,7 @@ export function IndicatorTable({ indicators }: Props) {
                 Risk Score{" "}
                 <InfoIcon text="Normalized 0–100 score. Higher = greater crash risk contribution from this indicator." />
               </SortHeader>
+              <th style={thStyle}>Updated</th>
               {isBeginner && <th style={thStyle}>Why it matters</th>}
             </tr>
           </thead>
@@ -183,6 +281,9 @@ export function IndicatorTable({ indicators }: Props) {
                     ) : (
                       <span style={{ color: C.textMuted, fontSize: 12 }}>Awaiting data</span>
                     )}
+                  </td>
+                  <td style={tdStyle}>
+                    <DataFreshnessCell indicator={ind} isProfessional={isProfessional} />
                   </td>
                   {isBeginner && (
                     <td style={{ ...tdStyle, color: C.textSecondary, fontSize: 12, maxWidth: 260, lineHeight: 1.4 }}>
